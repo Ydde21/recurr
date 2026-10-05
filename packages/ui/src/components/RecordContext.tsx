@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import type { ExecutionRecord } from '@recurr/core/types';
 import { fmtBytes, fmtMs, fmtTime } from '../lib/format';
 import { BodyViewer, HeadersTable } from './BodyViewer';
@@ -23,6 +23,9 @@ function Section({ title, children, defaultOpen = true, badge }: { title: string
 }
 
 export function RecordContext({ record }: { record: ExecutionRecord }) {
+  // Serialized size is computed once per record — stringify of a large record
+  // is not free.
+  const recordBytes = useMemo(() => new Blob([JSON.stringify(record)]).size, [record]);
   const req = record.request;
   const resp = record.response;
   const err = record.error;
@@ -185,7 +188,7 @@ export function RecordContext({ record }: { record: ExecutionRecord }) {
           <dt>events</dt>
           <dd>{record.events.length}</dd>
           <dt>size</dt>
-          <dd>{fmtBytes(new Blob([JSON.stringify(record)]).size)}</dd>
+          <dd>{fmtBytes(recordBytes)}</dd>
         </dl>
         {record.labels && Object.keys(record.labels).length > 0 && (
           <>

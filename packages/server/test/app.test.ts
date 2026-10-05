@@ -81,6 +81,11 @@ describe('collector API', () => {
     expect(res.status).toBe(400);
   });
 
+  it('rejects traversal ids on GET replays', async () => {
+    const res = await fetch(`${baseUrl}/v1/incidents/..%2F..%2Fetc/replays`);
+    expect(res.status).toBe(400);
+  });
+
   it('404s on missing records', async () => {
     const res = await fetch(`${baseUrl}/v1/executions/RUN-MISSING`);
     expect(res.status).toBe(404);
@@ -100,6 +105,21 @@ describe('collector API', () => {
     });
     expect(ok.status).toBe(201);
     expect((await (await fetch(`${baseUrl}/v1/regressions`)).json()).length).toBe(1);
+  });
+
+  it('defaults createdAt on regression posts so all stores behave alike', async () => {
+    // FileStore would persist a missing timestamp; pg's NOT NULL column would
+    // 500 — the route fills it in instead.
+    const res = await fetch(`${baseUrl}/v1/regressions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id: 'REG-NOTS', incidentId: 'RUN-SRV001', name: 'n' }),
+    });
+    expect(res.status).toBe(201);
+    const list = (await (await fetch(`${baseUrl}/v1/regressions`)).json()) as { id: string; createdAt: string }[];
+    const saved = list.find((r) => r.id === 'REG-NOTS');
+    expect(saved?.createdAt).toBeTruthy();
+    expect(Number.isNaN(Date.parse(saved?.createdAt ?? ''))).toBe(false);
   });
 });
 
@@ -129,6 +149,21 @@ describe('replay endpoints', () => {
     const body = await res.json();
     expect(body.schemaVersion).toBe(1);
     expect(body.store).toBe(`file://${tmp}`);
+  });
+
+  it('redacts credentials from the store spec in healthz', async () => {
+    // pg/http specs embed userinfo — healthz must never echo the password.
+    const app = createApp(new FileStore(tmp), { storeSpec: 'pg:postgres://u:s3cret@db.internal:5432/x' });
+    const srv = app.listen(0, '127.0.0.1');
+    await new Promise<void>((r) => srv.once('listening', r));
+    try {
+      const port = (srv.address() as { port: number }).port;
+      const body = await (await fetch(`http://127.0.0.1:${port}/healthz`)).json();
+      expect(body.store).toBe('pg:postgres://***@db.internal:5432/x');
+      expect(body.store).not.toContain('s3cret');
+    } finally {
+      srv.close();
+    }
   });
 
   it('501s replay when the server has no resolvable store spec', async () => {

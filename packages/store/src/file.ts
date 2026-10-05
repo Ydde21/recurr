@@ -102,7 +102,11 @@ export class FileStore implements IncidentStore {
       const files = (await fs.readdir(this.regressionsDir())).filter((f) => f.endsWith('.json'));
       const out: RegressionScenario[] = [];
       for (const f of files) {
-        out.push(JSON.parse(await fs.readFile(path.join(this.regressionsDir(), f), 'utf8')) as RegressionScenario);
+        try {
+          out.push(JSON.parse(await fs.readFile(path.join(this.regressionsDir(), f), 'utf8')) as RegressionScenario);
+        } catch {
+          /* skip corrupt scenario files */
+        }
       }
       return out.sort((x, y) => x.createdAt.localeCompare(y.createdAt));
     } catch {

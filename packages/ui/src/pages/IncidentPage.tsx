@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import type { ExecutionRecord, TimelineEvent } from '@recurr/core/types';
 import { api } from '../api';
@@ -22,6 +22,15 @@ export function IncidentPage({ isReplay }: { isReplay?: boolean }) {
   const [replayOpen, setReplayOpen] = useState(false);
   const [diffOpen, setDiffOpen] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
+  // A replay can take a minute — if the user navigates away meanwhile, the
+  // deferred navigate() must not fire from an unmounted page.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const record = q.data;
   const replays = useMemo(() => replaysQ.data ?? [], [replaysQ.data]);
@@ -43,6 +52,7 @@ export function IncidentPage({ isReplay }: { isReplay?: boolean }) {
       { command: form.command.trim(), ...(form.cwd.trim() ? { cwd: form.cwd.trim() } : {}) },
       { timeoutMs: Number(form.timeoutMs) || undefined },
     );
+    if (!mounted.current) return; // replay persisted; user navigated away
     setReplayOpen(false);
     nav(`/incidents/${id}/diff/${res.replayId}`);
   };
@@ -231,6 +241,7 @@ function SaveScenarioDialog({ record, onClose }: { record: ExecutionRecord; onCl
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string>();
+  const existing = useApi(() => api.listRegressions().then((l) => l.find((s) => s.incidentId === incidentRef)), [incidentRef]);
   const save = async () => {
     setBusy(true);
     setErr(undefined);
@@ -268,6 +279,11 @@ function SaveScenarioDialog({ record, onClose }: { record: ExecutionRecord; onCl
         fixed build to verify the incident no longer reproduces.
         {record.kind === 'replay' && <> (this record is a replay — the scenario points at its source incident)</>}
       </div>
+      {existing.data && (
+        <div className="banner warn" style={{ marginBottom: 8 }}>
+          scenario <span className="mono">{existing.data.id}</span> already watches this incident — saving overwrites it
+        </div>
+      )}
       <div className="field">
         <label htmlFor="s-name">name</label>
         <input id="s-name" type="text" value={name} onChange={(e) => setName(e.target.value)} />

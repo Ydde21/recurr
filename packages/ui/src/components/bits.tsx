@@ -33,10 +33,6 @@ export function KindDot({ kind }: { kind: EventKind | string }) {
   return <span className={`kind-dot ${meta.cls}`} />;
 }
 
-export function Chevron({ open }: { open?: boolean }) {
-  return <span className="chev">{open ? '▸' : '▸'}</span>;
-}
-
 /** "REDACTED" marker matching what the redaction engine stores. */
 export function isRedactedValue(v: unknown): boolean {
   return typeof v === 'string' && v.includes('[REDACTED]');

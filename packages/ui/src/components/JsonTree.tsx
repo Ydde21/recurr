@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { isRedactedValue } from './bits';
 
 /* Lazy JSON tree — expands nodes on demand so large records stay cheap.
@@ -74,16 +74,21 @@ function JNode({ k, v, depth, defaultOpen }: { k?: string; v: unknown; depth: nu
 }
 
 export function JsonTree({ value, defaultDepth }: { value: unknown; defaultDepth?: number }) {
-  if (typeof value === 'string') {
+  // String values may be serialized JSON — parse once per value, not per render.
+  const parsed = useMemo(() => {
+    if (typeof value !== 'string') return { v: value, ok: false };
     try {
-      value = JSON.parse(value);
+      return { v: JSON.parse(value), ok: true };
     } catch {
-      return <div className="jt"><JScalar v={value} /></div>;
+      return { v: value, ok: false };
     }
+  }, [value]);
+  if (typeof value === 'string' && !parsed.ok) {
+    return <div className="jt"><JScalar v={value} /></div>;
   }
   return (
     <div className="jt">
-      <JNode v={value} depth={0} defaultOpen={(defaultDepth ?? 2) > 0} />
+      <JNode v={parsed.v} depth={0} defaultOpen={(defaultDepth ?? 2) > 0} />
     </div>
   );
 }

@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useMemo } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { ExecutionSummary } from '@recurr/core/types';
 import { api } from '../api';
 import { useApi } from '../hooks';
@@ -9,6 +9,9 @@ import { StatusBadge } from '../components/bits';
 
 type SortKey = 'capturedAt' | 'durationMs' | 'status' | 'service';
 type StatusBucket = 'all' | 'error' | '5xx' | '4xx' | '2xx';
+
+const LIST_LIMIT = 500;
+const SORT_KEYS: SortKey[] = ['capturedAt', 'durationMs', 'status', 'service'];
 
 function bucket(s: ExecutionSummary, b: StatusBucket): boolean {
   switch (b) {
@@ -27,7 +30,7 @@ function bucket(s: ExecutionSummary, b: StatusBucket): boolean {
 
 export function IncidentsPage({ searchRef }: { searchRef?: React.RefObject<HTMLInputElement> }) {
   const nav = useNavigate();
-  const q = useApi(() => api.listExecutions({ kind: 'incident', limit: 500 }), []);
+  const q = useApi(() => api.listExecutions({ kind: 'incident', limit: LIST_LIMIT }), []);
   const replays = useApi(() => api.listExecutions({ kind: 'replay', limit: 1000 }), []);
   const replayCounts = useMemo(() => {
     const m = new Map<string, number>();
@@ -36,12 +39,28 @@ export function IncidentsPage({ searchRef }: { searchRef?: React.RefObject<HTMLI
     }
     return m;
   }, [replays.data]);
-  const [search, setSearch] = useState('');
-  const [service, setService] = useState('all');
-  const [env, setEnv] = useState('all');
-  const [status, setStatus] = useState<StatusBucket>('all');
-  const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'capturedAt', dir: -1 });
 
+  // Filter/sort state lives in the URL — survives back/forward, refresh, and
+  // is shareable (Services page drills in with ?svc=/&env= pre-set).
+  const [params, setParams] = useSearchParams();
+  const search = params.get('q') ?? '';
+  const service = params.get('svc') ?? 'all';
+  const env = params.get('env') ?? 'all';
+  const statusParam = params.get('st') ?? 'all';
+  const status: StatusBucket = (['all', 'error', '5xx', '4xx', '2xx'] as StatusBucket[]).includes(statusParam as StatusBucket) ? (statusParam as StatusBucket) : 'all';
+  const sortKey = (SORT_KEYS.includes(params.get('sk') as SortKey) ? params.get('sk') : 'capturedAt') as SortKey;
+  const sortDir = params.get('sd') === 'asc' ? 1 : -1;
+  const setParam = (k: string, v: string | undefined) => {
+    setParams(
+      (prev) => {
+        const p = new URLSearchParams(prev);
+        if (v === undefined || v === '' || v === 'all') p.delete(k);
+        else p.set(k, v);
+        return p;
+      },
+      { replace: true },
+    );
+  };
   const services = useMemo(() => [...new Set((q.data ?? []).map((s) => s.service))].sort(), [q.data]);
   const envs = useMemo(() => [...new Set((q.data ?? []).map((s) => s.env))].sort(), [q.data]);
 
@@ -54,21 +73,34 @@ export function IncidentsPage({ searchRef }: { searchRef?: React.RefObject<HTMLI
     if (service !== 'all') list = list.filter((s) => s.service === service);
     if (env !== 'all') list = list.filter((s) => s.env === env);
     list = list.filter((s) => bucket(s, status));
-    const dir = sort.dir;
     return [...list].sort((a, b) => {
-      const av = a[sort.key] ?? '';
-      const bv = b[sort.key] ?? '';
-      return (av < bv ? -1 : av > bv ? 1 : 0) * dir;
+      const av = a[sortKey] ?? '';
+      const bv = b[sortKey] ?? '';
+      return (av < bv ? -1 : av > bv ? 1 : 0) * sortDir;
     });
-  }, [q.data, search, service, env, status, sort]);
+  }, [q.data, search, service, env, status, sortKey, sortDir]);
 
   const th = (key: SortKey, label: string) => (
-    <th
-      className="sortable"
-      onClick={() => setSort((s) => ({ key, dir: s.key === key ? ((s.dir * -1) as 1 | -1) : -1 }))}
-      aria-sort={sort.key === key ? (sort.dir === 1 ? 'ascending' : 'descending') : undefined}
-    >
-      {label} {sort.key === key ? (sort.dir === 1 ? '↑' : '↓') : ''}
+    <th className="sortable" aria-sort={sortKey === key ? (sortDir === 1 ? 'ascending' : 'descending') : undefined}>
+      <button
+        className="th-sort"
+        onClick={() => {
+          // One setParams call — sequential calls each see the same stale
+          // location snapshot, so the last navigation would win silently.
+          setParams(
+            (prev) => {
+              const p = new URLSearchParams(prev);
+              p.set('sk', key);
+              if (sortKey === key && sortDir === -1) p.set('sd', 'asc');
+              else p.delete('sd');
+              return p;
+            },
+            { replace: true },
+          );
+        }}
+      >
+        {label} {sortKey === key ? (sortDir === 1 ? '↑' : '↓') : ''}
+      </button>
     </th>
   );
 
@@ -77,20 +109,20 @@ export function IncidentsPage({ searchRef }: { searchRef?: React.RefObject<HTMLI
       <div className="page-h">
         <span className="page-title">Incidents</span>
         <div className="filterbar">
-          <input ref={searchRef} type="text" className="search-input" placeholder="filter by id, path, error, service — / to focus" value={search} onChange={(e) => setSearch(e.target.value)} />
-          <select value={service} onChange={(e) => setService(e.target.value)} aria-label="service">
+          <input ref={searchRef} type="text" className="search-input" placeholder="filter by id, path, error, service — / to focus" value={search} onChange={(e) => setParam('q', e.target.value)} />
+          <select value={service} onChange={(e) => setParam('svc', e.target.value)} aria-label="service">
             <option value="all">all services</option>
             {services.map((s) => (
               <option key={s}>{s}</option>
             ))}
           </select>
-          <select value={env} onChange={(e) => setEnv(e.target.value)} aria-label="environment">
+          <select value={env} onChange={(e) => setParam('env', e.target.value)} aria-label="environment">
             <option value="all">all envs</option>
             {envs.map((s) => (
               <option key={s}>{s}</option>
             ))}
           </select>
-          <select value={status} onChange={(e) => setStatus(e.target.value as StatusBucket)} aria-label="status">
+          <select value={status} onChange={(e) => setParam('st', e.target.value)} aria-label="status">
             <option value="all">all statuses</option>
             <option value="error">error thrown</option>
             <option value="5xx">5xx</option>
@@ -100,6 +132,7 @@ export function IncidentsPage({ searchRef }: { searchRef?: React.RefObject<HTMLI
         </div>
         <span className="dim" style={{ marginLeft: 'auto', fontSize: 11 }}>
           {rows.length} {q.data && `of ${q.data.length}`} incidents
+          {(q.data?.length ?? 0) >= LIST_LIMIT && <span className="faint" title={`list is capped at ${LIST_LIMIT}`}> (latest {LIST_LIMIT})</span>}
         </span>
       </div>
       <div className="page-body">

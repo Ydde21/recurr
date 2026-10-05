@@ -1,9 +1,9 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openStore, PgStore, type IncidentStore } from '@recurr/store';
-import { createApp } from './app.js';
+import { createApp, redactStoreSpec } from './app.js';
 
-export { createApp };
+export { createApp, redactStoreSpec };
 export type { AppOptions } from './app.js';
 
 export interface ServerOptions {
@@ -41,7 +41,7 @@ export async function start(opts: ServerOptions = {}): Promise<{ port: number; c
     const server = app.listen(port, () => {
       const addr = server.address();
       const actual = typeof addr === 'object' && addr ? addr.port : port;
-      console.log(`[recurr-server] listening on :${actual} (store: ${spec})`);
+      console.log(`[recurr-server] listening on :${actual} (store: ${redactStoreSpec(spec)})`);
       resolve({
         port: actual,
         close: () =>

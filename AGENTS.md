@@ -36,6 +36,8 @@ NodeNext). Name is "Recurr" — packages `@recurr/*`, CLI binary `recurr`.
 - Store I/O runs outside the request ALS context (`als.exit`) so SDK-internal
   randomness/time/HTTP never pollutes the record.
 - Parent↔child IPC: `recurr:ready` `{port}` then `recurr:done` `{id}`.
+  The preload exits the child on `disconnect` — a replay child must never
+  outlive the orchestrator (SIGKILL skips the parent's exit handlers).
 - Event kinds: `http.in`, `db.query`, `http.out`, `error`, `retry`, `log`,
   `custom`, `replay.note` (self-reported replay divergences).
 

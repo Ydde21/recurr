@@ -6,6 +6,7 @@ import { IncidentPage } from './pages/IncidentPage';
 import { ReplaysPage } from './pages/ReplaysPage';
 import { ScenariosPage } from './pages/ScenariosPage';
 import { ServicesPage } from './pages/ServicesPage';
+import { EnvironmentsPage } from './pages/EnvironmentsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { DiffPage } from './pages/DiffPage';
 import { useRef } from 'react';
@@ -42,6 +43,7 @@ export function App() {
           <NavLink to="/replays">Replays</NavLink>
           <NavLink to="/scenarios">Scenarios</NavLink>
           <NavLink to="/services">Services</NavLink>
+          <NavLink to="/environments">Environments</NavLink>
           <NavLink to="/settings">Settings</NavLink>
         </nav>
         <div className="topbar-right">
@@ -61,6 +63,7 @@ export function App() {
           <Route path="/scenarios" element={<ScenariosPage />} />
           <Route path="/services" element={<ServicesPage />} />
           <Route path="/services/:name" element={<ServicesPage />} />
+          <Route path="/environments" element={<EnvironmentsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/incidents" replace />} />
         </Routes>

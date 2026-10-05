@@ -181,7 +181,7 @@ export function DiffView({ original, replay, report }: { original: ExecutionReco
             )}
           </div>
           <div className="dv-list">
-            {vis.map((d) => {
+            {vis.slice(0, 300).map((d) => {
               const i = report.divergences.indexOf(d);
               return (
                 <div key={i}>
@@ -203,6 +203,11 @@ export function DiffView({ original, replay, report }: { original: ExecutionReco
                 </div>
               );
             })}
+            {vis.length > 300 && (
+              <div className="faint" style={{ padding: '6px 12px', fontSize: 11 }}>
+                … {vis.length - 300} more divergences — the diff engine lists all of them in the report; fetch the record via CLI for the full set
+              </div>
+            )}
           </div>
         </div>
       ) : (

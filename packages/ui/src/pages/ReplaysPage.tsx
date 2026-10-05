@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useMemo } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { useApi } from '../hooks';
 import { fmtMs, fmtTimeShort } from '../lib/format';
@@ -11,7 +11,15 @@ import { StatusBadge } from '../components/bits';
 export function ReplaysPage() {
   const nav = useNavigate();
   const q = useApi(() => api.listExecutions({ kind: 'replay', limit: 500 }), []);
-  const [search, setSearch] = useState('');
+  const [params, setParams] = useSearchParams();
+  const search = params.get('q') ?? '';
+  const setSearch = (v: string) =>
+    setParams((prev) => {
+      const p = new URLSearchParams(prev);
+      if (v) p.set('q', v);
+      else p.delete('q');
+      return p;
+    }, { replace: true });
 
   const rows = useMemo(() => {
     let list = q.data ?? [];
@@ -59,9 +67,9 @@ export function ReplaysPage() {
                   <td className="mono nowrap">{s.id}</td>
                   <td className="mono nowrap">
                     {s.replayOf ? (
-                      <a href={`/incidents/${s.replayOf}`} onClick={(e) => e.stopPropagation()}>
+                      <Link to={`/incidents/${s.replayOf}`} onClick={(e) => e.stopPropagation()}>
                         {s.replayOf}
-                      </a>
+                      </Link>
                     ) : (
                       <span className="faint">—</span>
                     )}

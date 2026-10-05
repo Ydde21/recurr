@@ -5,6 +5,12 @@ import { isSafeRecordId, validateRecord, SCHEMA_VERSION, type RegressionScenario
 import { replayIncident, ReplayError } from '@recurr/replay';
 import type { IncidentStore } from '@recurr/store';
 
+/** Strip userinfo from store specs before logging/exposing them — pg
+ *  connection strings embed passwords. */
+export function redactStoreSpec(spec: string): string {
+  return spec.replace(/(\w+:\/\/)[^/@]*@/, '$1***@');
+}
+
 export interface AppOptions {
   /**
    * Store spec string propagated to replay children (RECURR_STORE). Required
@@ -66,6 +72,11 @@ function parseReplayBody(body: ReplayRequestBody):
   };
 }
 
+/** Each replay spawns a real child process — bound how many can run at once
+ *  so a burst of requests can't exhaust the host. Excess requests get 429. */
+const MAX_CONCURRENT_REPLAYS = 4;
+let inflightReplays = 0;
+
 function replayErrorStatus(err: ReplayError): number {
   switch (err.code) {
     case 'NOT_FOUND':
@@ -89,7 +100,9 @@ export function createApp(store: IncidentStore, opts: AppOptions = {}): Express 
   app.use(express.json({ limit: '25mb' }));
 
   app.get('/healthz', (_req, res) => {
-    res.json({ ok: true, service: 'recurr-server', schemaVersion: SCHEMA_VERSION, store: opts.storeSpec });
+    // The pg spec embeds credentials — strip the authority's userinfo before
+    // advertising it to anyone who can reach the endpoint.
+    res.json({ ok: true, service: 'recurr-server', schemaVersion: SCHEMA_VERSION, store: opts.storeSpec ? redactStoreSpec(opts.storeSpec) : undefined });
   });
 
   // Ingest — untrusted input, validate before it touches the store.
@@ -141,6 +154,10 @@ export function createApp(store: IncidentStore, opts: AppOptions = {}): Express 
 
   app.get('/v1/incidents/:id/replays', async (req, res, next) => {
     try {
+      if (!isSafeRecordId(req.params.id)) {
+        res.status(400).json({ error: 'invalid id' });
+        return;
+      }
       res.json(await store.listReplays(req.params.id));
     } catch (err) {
       next(err);
@@ -164,16 +181,26 @@ export function createApp(store: IncidentStore, opts: AppOptions = {}): Express 
         res.status(400).json({ error: parsed.error });
         return;
       }
+      if (inflightReplays >= MAX_CONCURRENT_REPLAYS) {
+        res.status(429).json({ error: `${MAX_CONCURRENT_REPLAYS} replays already running — retry when one finishes`, code: 'BUSY' });
+        return;
+      }
+      inflightReplays++;
       const progress: string[] = [];
-      const result = await replayIncident({
-        store,
-        storeSpec: opts.storeSpec,
-        incidentId: req.params.id,
-        target: parsed.target,
-        timeoutMs: parsed.timeoutMs,
-        readyTimeoutMs: parsed.readyTimeoutMs,
-        onProgress: (m) => progress.push(m),
-      });
+      let result;
+      try {
+        result = await replayIncident({
+          store,
+          storeSpec: opts.storeSpec,
+          incidentId: req.params.id,
+          target: parsed.target,
+          timeoutMs: parsed.timeoutMs,
+          readyTimeoutMs: parsed.readyTimeoutMs,
+          onProgress: (m) => progress.push(m),
+        });
+      } finally {
+        inflightReplays--;
+      }
       res.status(201).json({
         replayId: result.replay.id,
         observedStatus: result.observedStatus,
@@ -208,7 +235,9 @@ export function createApp(store: IncidentStore, opts: AppOptions = {}): Express 
         res.status(400).json({ error: 'invalid createdAt' });
         return;
       }
-      await store.saveRegression(s);
+      // FileStore would happily persist a missing timestamp; pg's NOT NULL
+      // column would 500. Default it so both stores behave identically.
+      await store.saveRegression({ ...s, createdAt: s.createdAt ?? new Date().toISOString() });
       res.status(201).json({ id: s.id });
     } catch (err) {
       next(err);
@@ -245,16 +274,26 @@ export function createApp(store: IncidentStore, opts: AppOptions = {}): Express 
         res.status(404).json({ error: `no regression scenario ${req.params.id}` });
         return;
       }
+      if (inflightReplays >= MAX_CONCURRENT_REPLAYS) {
+        res.status(429).json({ error: `${MAX_CONCURRENT_REPLAYS} replays already running — retry when one finishes`, code: 'BUSY' });
+        return;
+      }
+      inflightReplays++;
       const progress: string[] = [];
-      const result = await replayIncident({
-        store,
-        storeSpec: opts.storeSpec,
-        incidentId: scenario.incidentId,
-        target: parsed.target,
-        timeoutMs: parsed.timeoutMs,
-        readyTimeoutMs: parsed.readyTimeoutMs,
-        onProgress: (m) => progress.push(m),
-      });
+      let result;
+      try {
+        result = await replayIncident({
+          store,
+          storeSpec: opts.storeSpec,
+          incidentId: scenario.incidentId,
+          target: parsed.target,
+          timeoutMs: parsed.timeoutMs,
+          readyTimeoutMs: parsed.readyTimeoutMs,
+          onProgress: (m) => progress.push(m),
+        });
+      } finally {
+        inflightReplays--;
+      }
       res.status(201).json({
         scenario,
         replayId: result.replay.id,

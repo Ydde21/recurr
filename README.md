@@ -168,6 +168,13 @@ RECURR_STORE=http://localhost:4780 recurr incidents
 Or point the server at Postgres directly:
 `DATABASE_URL=postgres://… recurr-server` (migrations auto-apply on boot).
 
+> **Exposure warning:** `recurr-server` has no authentication, and the replay
+> endpoints intentionally execute a target command on the host (that's the
+> product). Run it on localhost or behind an authenticating reverse proxy —
+> never expose it to an untrusted network. Replay children are isolated from
+> the network but not the filesystem; hostile replay targets need disposable
+> machines.
+
 ## Privacy & safety
 
 - Redaction runs **in the SDK before persistence** — denylist fields

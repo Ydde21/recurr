@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import type { RegressionScenario } from '@recurr/core/types';
 import { api, ApiError } from '../api';
@@ -15,6 +15,13 @@ export function ScenariosPage() {
   const q = useApi(() => api.listRegressions(), []);
   const replays = useApi(() => api.listExecutions({ kind: 'replay', limit: 1000 }), []);
   const [running, setRunning] = useState<RegressionScenario | undefined>();
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   // Replay count per incident. Replay capturedAt is the *replayed* clock, so
   // ordering among them is not meaningful — show counts, not "latest".
@@ -102,6 +109,7 @@ export function ScenariosPage() {
           scenario={running}
           onClose={() => setRunning(undefined)}
           onDone={(replayId) => {
+            if (!mounted.current) return;
             setRunning(undefined);
             nav(`/incidents/${running.incidentId}/diff/${replayId}`);
           }}

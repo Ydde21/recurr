@@ -125,6 +125,7 @@ export function Timeline({ events, selected, onSelect, flags, focusSeq, scrollTo
         tabIndex={0}
         role="listbox"
         aria-label="execution timeline"
+        aria-activedescendant={selected !== undefined ? `tl-opt-${selected}` : undefined}
         onScroll={(e) => {
           const top = (e.target as HTMLDivElement).scrollTop;
           setScroll(top);
@@ -149,6 +150,7 @@ export function Timeline({ events, selected, onSelect, flags, focusSeq, scrollTo
             return (
               <div
                 key={e.seq}
+                id={`tl-opt-${e.seq}`}
                 role="option"
                 aria-selected={selected === e.seq}
                 className={`tl-row ${selected === e.seq ? 'sel' : ''} ${flag === 'missing' ? 'missing-row' : ''}`}

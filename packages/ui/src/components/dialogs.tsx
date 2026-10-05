@@ -3,18 +3,53 @@ import { ApiError } from '../api';
 
 /* Modal dialogs — replay target picker, scenario naming, run launcher. */
 
+let dialogSeq = 0;
+
 export function Dialog({ title, children, footer, onClose }: { title: ReactNode; children: ReactNode; footer?: ReactNode; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [id] = useState(() => `dlg-${++dialogSeq}`);
+  const restoreRef = useRef<Element | null>(null);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', onKey);
+    // Capture the restore target once — the effect re-runs when onClose's
+    // identity changes (e.g. busy toggle), and activeElement by then may be
+    // inside the dialog itself.
+    if (!restoreRef.current) restoreRef.current = document.activeElement;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onClose();
+        return;
+      }
+      if (e.key === 'Tab' && ref.current) {
+        // Focus trap — keep Tab/Shift+Tab cycling inside the dialog.
+        const focusable = ref.current.querySelectorAll<HTMLElement>(
+          'button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])',
+        );
+        const list = [...focusable].filter((el) => !el.hasAttribute('disabled'));
+        if (!list.length) return;
+        const first = list[0];
+        const last = list[list.length - 1];
+        const active = document.activeElement as HTMLElement | null;
+        if (e.shiftKey && (active === first || !ref.current.contains(active))) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && (active === last || !ref.current.contains(active))) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    window.addEventListener('keydown', onKey, true);
     ref.current?.querySelector('input')?.focus();
-    return () => window.removeEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey, true);
+      (restoreRef.current as HTMLElement | null)?.focus?.();
+    };
   }, [onClose]);
   return (
-    <div className="overlay" onClick={(e) => e.target === e.currentTarget && onClose()} role="dialog" aria-modal="true">
-      <div className="dialog" ref={ref}>
-        <div className="dialog-h">{title}</div>
+    <div className="overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="dialog" ref={ref} role="dialog" aria-modal="true" aria-labelledby={`${id}-t`}>
+        <div className="dialog-h" id={`${id}-t`}>{title}</div>
         <div className="dialog-b">{children}</div>
         {footer && <div className="dialog-f">{footer}</div>}
       </div>

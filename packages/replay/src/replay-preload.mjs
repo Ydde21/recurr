@@ -37,6 +37,12 @@ const BLOCKED = new Set([
  *  exempt its own files so instrumentation still installs. */
 const SDK_PATH = /\/(@recurr\/sdk|packages\/sdk)\//;
 
+if (process.env.RECURR_MODE === 'replay') {
+  // If the orchestrator dies (even SIGKILL, which skips its exit handlers),
+  // the IPC channel closes — a replay child must never outlive its parent.
+  process.on('disconnect', () => process.exit(0));
+}
+
 if (process.env.RECURR_MODE === 'replay' && process.env.RECURR_REPLAY_ALLOW_NET !== '1') {
   registerHooks({
     resolve(specifier, context, next) {
