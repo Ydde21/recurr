@@ -46,7 +46,10 @@ export function createMiddleware(state: RecurrState) {
       const cap = ctx.redactor.maxBodyBytes;
       const collect = (chunk: unknown) => {
         if (chunk === undefined || bytes >= cap) return;
-        const b = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+        const b =
+          Buffer.isBuffer(chunk) || chunk instanceof Uint8Array
+            ? Buffer.from(chunk as Uint8Array)
+            : Buffer.from(String(chunk));
         chunks.push(b.subarray(0, Math.max(0, cap - bytes)));
         bytes += b.length;
       };
@@ -66,10 +69,14 @@ export function createMiddleware(state: RecurrState) {
         next(err as never);
       };
 
+      state.inflight++;
       let repersistTimer: NodeJS.Timeout | undefined;
       let repersistCount = 0;
       const finalize = (aborted: boolean) => {
-        if (ctx.closed) return;
+        if (ctx.closed) {
+          state.inflight--;
+          return;
+        }
         ctx.aborted = aborted || undefined;
         if (aborted) {
           pushEvent(ctx, 'log', { name: 'response.aborted', status: 'error', data: { message: 'connection closed before response finished' } });
@@ -82,8 +89,15 @@ export function createMiddleware(state: RecurrState) {
         const bodyStr = rawBody === undefined ? undefined : isTextual ? rawBody.toString('utf8') : rawBody.toString('base64');
         const bodyB64 = rawBody !== undefined && !isTextual;
 
+        // The collected body was capped at maxBodyBytes — say so in the
+        // record instead of presenting a clipped body as the real one.
+        if (bytes > cap) ctx.truncatedPaths.push('response.body');
+
         // Async captures (cloned fetch bodies) must land before we serialize.
-        void Promise.allSettled([...ctx.pending]).then(() => {
+        // The whole finalize chain is tracked so flush() can't return before
+        // the record save has actually been queued (soak tests found records
+        // missing when flush raced this promise).
+        const fin = Promise.allSettled([...ctx.pending]).then(() => {
           const record = buildRecord(ctx, state, req as RequestLike, res, bodyStr, bodyB64);
           const saved = shouldPersist(ctx, state, res.statusCode) || aborted;
           if (saved) persist(ctx, state, record);
@@ -101,7 +115,10 @@ export function createMiddleware(state: RecurrState) {
               repersistTimer.unref?.();
             };
           }
+          state.inflight--;
         });
+        state.pending.add(fin);
+        void fin.finally(() => state.pending.delete(fin));
       };
 
       res.on('finish', () => finalize(false));

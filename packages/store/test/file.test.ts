@@ -82,6 +82,27 @@ describe('FileStore', () => {
     await expect(store.get('RUN-CORRUPT')).rejects.toThrow(/corrupt/);
   });
 
+  it('untrusted files: hostile ids inside records cannot escape; non-object JSON is skipped', async () => {
+    const store = await tmpStore();
+    const dir = path.join((store as unknown as { dir: string }).dir, 'executions');
+    const fs = await import('node:fs/promises');
+    await fs.mkdir(dir, { recursive: true });
+    // A record file whose embedded id is hostile — listing survives it,
+    // and fetching by that id is still rejected at the boundary.
+    const hostile = rec('RUN-SAFE99');
+    hostile.id = '../../escape';
+    await fs.writeFile(path.join(dir, 'RUN-SAFE99.json'), JSON.stringify(hostile));
+    // Non-object JSON that happens to parse.
+    await fs.writeFile(path.join(dir, 'RUN-ARRAY1.json'), '[1,2,3]');
+    await fs.writeFile(path.join(dir, 'RUN-STRING.json'), '"just a string"');
+    const listed = await store.list();
+    // The hostile-id record lists under its hostile name but cannot be read back out.
+    expect(listed.some((s) => s.id === '../../escape')).toBe(true);
+    await expect(store.get('../../escape')).rejects.toThrow(/invalid record id/);
+    // Non-object files are skipped, not fatal.
+    expect(listed.some((s) => s.id === 'RUN-ARRAY1')).toBe(false);
+  });
+
   it('openStore resolves fs: specs', async () => {
     const dir = await mkdtemp(path.join(tmpdir(), 'recurr-spec-'));
     dirs.push(dir);

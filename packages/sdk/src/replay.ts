@@ -1,6 +1,6 @@
 import http from 'node:http';
 import https from 'node:https';
-import type { ExecutionRecord } from '@recurr/core';
+import { validateRecord, type ExecutionRecord } from '@recurr/core';
 import { setReplayOffset } from './patches/determinism.js';
 import { installReplayIsolation } from './patches/isolation.js';
 import { envConfig } from './config.js';
@@ -48,6 +48,12 @@ export async function setupReplay(state: RecurrState, replayOf: string): Promise
     const parent = await state.store.get(source.replayOf);
     if (!parent || hops++ > 16) break;
     source = parent;
+  }
+  // Records from a shared store are untrusted — refuse malformed input before
+  // we let it steer replay behavior.
+  const v = validateRecord(source);
+  if (!v.ok) {
+    throw new Error(`[recurr] replay source ${source.id} fails validation: ${v.error}`);
   }
   state.replaySource = source;
   installReplayIsolation({ allowHosts: storeTargets(envConfig().storeSpec) });

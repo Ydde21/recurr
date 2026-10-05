@@ -76,11 +76,22 @@ export function nextRecordedHttpOut(ctx: RuntimeCtx, method: string, url: string
 }
 
 function classifyError(err: unknown): HttpOutData['errorKind'] {
-  const e = err as { name?: string; code?: string; cause?: { code?: string } };
-  const name = e?.name ?? '';
-  const code = e?.code ?? e?.cause?.code ?? '';
-  if (name === 'TimeoutError' || code === 'ETIMEDOUT' || code === 'UND_ERR_CONNECT_TIMEOUT' || code === 'UND_ERR_HEADERS_TIMEOUT' || code === 'UND_ERR_BODY_TIMEOUT') return 'timeout';
-  if (code === 'ECONNRESET' || code === 'ECONNREFUSED' || code === 'EPIPE' || code === 'UND_ERR_SOCKET' || name === 'SocketError') return 'reset';
+  const name = (err as { name?: string })?.name ?? '';
+  // undici wraps socket failures in AggregateError — walk the cause chain
+  // and aggregate members, not just e.cause.code.
+  const codes = new Set<string>();
+  let cur: unknown = err;
+  for (let i = 0; i < 4 && cur; i++) {
+    const c = cur as { code?: string; cause?: unknown; errors?: unknown[] };
+    if (typeof c.code === 'string') codes.add(c.code);
+    if (Array.isArray(c.errors)) for (const e2 of c.errors) {
+      const cc = (e2 as { code?: string })?.code;
+      if (typeof cc === 'string') codes.add(cc);
+    }
+    cur = c.cause;
+  }
+  if (name === 'TimeoutError' || codes.has('ETIMEDOUT') || codes.has('UND_ERR_CONNECT_TIMEOUT') || codes.has('UND_ERR_HEADERS_TIMEOUT') || codes.has('UND_ERR_BODY_TIMEOUT')) return 'timeout';
+  if (codes.has('ECONNRESET') || codes.has('ECONNREFUSED') || codes.has('EPIPE') || codes.has('UND_ERR_SOCKET') || name === 'SocketError') return 'reset';
   return 'error';
 }
 
@@ -101,18 +112,46 @@ function pushHttpOut(ctx: RuntimeCtx, data: HttpOutData, durationMs: number, ok:
   });
 }
 
+/** Clip to max BYTES, not chars — a 64k-char UTF-8 string can be 192k bytes. */
+function clipUtf8(s: string, maxBytes: number): string {
+  if (Buffer.byteLength(s, 'utf8') <= maxBytes) return s;
+  return Buffer.from(s, 'utf8').subarray(0, maxBytes).toString('utf8');
+}
+
 function bodyToString(body: unknown, maxBytes: number): string | undefined {
   if (body === undefined || body === null) return undefined;
-  if (typeof body === 'string') return body.slice(0, maxBytes);
+  if (typeof body === 'string') return clipUtf8(body, maxBytes);
   if (Buffer.isBuffer(body) || body instanceof Uint8Array) return Buffer.from(body).subarray(0, maxBytes).toString('utf8');
   if (body instanceof URLSearchParams) return body.toString();
   if (typeof body === 'object' && 'pipe' in (body as object)) return '[stream]';
   if (body instanceof ReadableStream) return '[stream]';
   try {
-    return JSON.stringify(body)?.slice(0, maxBytes);
+    const s = JSON.stringify(body);
+    return s === undefined ? undefined : clipUtf8(s, maxBytes);
   } catch {
     return '[unserializable]';
   }
+}
+
+/** Read at most maxBytes from a Response/Request clone — never materializes
+ *  the full body the way .text() would on a multi-hundred-MB payload. */
+async function readCloneBounded(clone: { body: ReadableStream<Uint8Array> | null }, maxBytes: number): Promise<string> {
+  const stream = clone.body;
+  if (!stream) return '';
+  const reader = stream.getReader();
+  const parts: Buffer[] = [];
+  let n = 0;
+  try {
+    while (n <= maxBytes) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      parts.push(Buffer.from(value));
+      n += value.length;
+    }
+  } finally {
+    void reader.cancel().catch(() => {});
+  }
+  return Buffer.concat(parts).subarray(0, maxBytes).toString('utf8');
 }
 
 // ---------------------------------------------------------------------------
@@ -127,8 +166,9 @@ function patchFetch(): void {
     const ctx = als.getStore();
     if (!ctx) return origFetch(input, init);
 
-    const method = (init?.method ?? (input as Request).method ?? 'GET').toUpperCase();
-    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    const isReq = typeof input === 'object' && input !== null && typeof (input as Request).url === 'string';
+    const method = (init?.method ?? (isReq ? (input as Request).method : 'GET')).toUpperCase();
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : (input as Request).url;
     const maxBody = ctx.redactor.maxBodyBytes;
     const redUrl = ctx.redactor.redactUrl(url).value;
     const requestBody = ctx.config.capture?.captureOutboundBodies === false ? undefined : bodyToString(init?.body, maxBody);
@@ -142,7 +182,20 @@ function patchFetch(): void {
         : { method, url: redUrl, requestBody: reqRed?.value, errorKind: 'error', error: 'no recorded response' };
       const ok = !!rec && !rec.error && !rec.errorKind;
       pushHttpOut(ctx, data, rec ? recLatency(ctx, data) : 0, ok);
-      return synthesizeFetchResponse(rec, method, url);
+      // Honor caller aborts — a replayed response must not arrive after the
+      // app's own AbortController fired.
+      const sig = init?.signal ?? (isReq ? (input as Request).signal : undefined);
+      const response = synthesizeFetchResponse(rec, method, url);
+      if (sig) {
+        if (sig.aborted) return Promise.reject(sig.reason instanceof Error ? sig.reason : new DOMException('This operation was aborted', 'AbortError'));
+        return Promise.race([
+          response,
+          new Promise<never>((_res, rej) => {
+            sig.addEventListener('abort', () => rej(sig.reason instanceof Error ? sig.reason : new DOMException('This operation was aborted', 'AbortError')), { once: true });
+          }),
+        ]);
+      }
+      return response;
     }
 
     const t0 = performance.now();
@@ -157,17 +210,30 @@ function patchFetch(): void {
         ctx.redactionHits.push(...reqRed.hits);
         data.requestBody = reqRed.value;
       }
-      // Push now so event ordering reflects response arrival; the body is
-      // captured asynchronously so large/streamed bodies never delay the app.
+      // Push now so event ordering reflects response arrival; bodies are
+      // captured asynchronously (bounded) so large/streamed payloads never
+      // delay the app.
       pushHttpOut(ctx, data, durationMs, true);
       if (ctx.config.capture?.captureOutboundBodies !== false) {
+        // fetch(new Request(url, {body})) — the body lives on the Request
+        // object, not in init. Read a clone, bounded.
+        if (requestBody === undefined && isReq && (input as Request).body) {
+          const reqClone = (input as Request).clone();
+          const p = readCloneBounded(reqClone, maxBody)
+            .then((raw) => {
+              if (!raw) return;
+              const red = ctx.redactor.redactBody(raw, undefined, 'http.out.requestBody');
+              ctx.redactionHits.push(...red.hits);
+              data.requestBody = red.value;
+              if (ctx.closed) ctx.repersist?.();
+            })
+            .catch(() => {});
+          ctx.pending.push(p);
+        }
         const ct = res.headers.get('content-type') ?? undefined;
-        const p = res
-          .clone()
-          .text()
+        const p = readCloneBounded(res.clone(), maxBody)
           .then((raw) => {
-            const clipped = Buffer.byteLength(raw, 'utf8') > maxBody ? Buffer.from(raw, 'utf8').subarray(0, maxBody).toString('utf8') : raw;
-            const red = ctx.redactor.redactBody(clipped, ct, 'http.out.responseBody');
+            const red = ctx.redactor.redactBody(raw, ct, 'http.out.responseBody');
             ctx.redactionHits.push(...red.hits);
             ctx.truncatedPaths.push(...red.truncated);
             data.responseBody = red.value;
@@ -269,6 +335,7 @@ interface NormalizedArgs {
   method: string;
   url: string;
   cb?: (res: http.IncomingMessage) => void;
+  signal?: AbortSignal;
 }
 
 function normalizeRequestArgs(scheme: string, args: unknown[]): NormalizedArgs {
@@ -291,7 +358,7 @@ function normalizeRequestArgs(scheme: string, args: unknown[]): NormalizedArgs {
     urlStr = `${proto}//${host}${port}${path}`;
   }
   const method = ((options.method as string) ?? 'GET').toUpperCase();
-  return { args: a, method, url: urlStr, cb };
+  return { args: a, method, url: urlStr, cb, signal: options.signal as AbortSignal | undefined };
 }
 
 function patchRequestModule(mod: typeof http | typeof https, scheme: string): void {
@@ -303,7 +370,7 @@ function patchRequestModule(mod: typeof http | typeof https, scheme: string): vo
   // 'node:http'` snapshots the binding and escapes patching.
   mod.request = function request(...rawArgs: unknown[]): http.ClientRequest {
     const ctx = als.getStore();
-    const { args, method, url, cb } = normalizeRequestArgs(scheme, rawArgs);
+    const { args, method, url, cb, signal } = normalizeRequestArgs(scheme, rawArgs);
     if (!ctx) return (origRequest as (...a: unknown[]) => http.ClientRequest)(...rawArgs);
 
     const maxBody = ctx.redactor.maxBodyBytes;
@@ -311,12 +378,14 @@ function patchRequestModule(mod: typeof http | typeof https, scheme: string): vo
 
     if (ctx.mode === 'replay') {
       const rec = nextRecordedHttpOut(ctx, method, redUrl);
-      return fakeClientRequest(ctx, rec, method, url, cb);
+      return fakeClientRequest(ctx, rec, method, url, cb, signal);
     }
 
     const t0 = performance.now();
     const reqChunks: Buffer[] = [];
     let reqBytes = 0;
+    let resData: (HttpOutData & { responsePending?: boolean }) | undefined;
+    let resEv: TimelineEvent | undefined;
 
     const wrappedCb = (res: http.IncomingMessage) => {
       // Record at headers-arrival, not body end — a consumer that never reads
@@ -336,6 +405,8 @@ function patchRequestModule(mod: typeof http | typeof https, scheme: string): vo
         responsePending: true,
       };
       const ev = pushHttpOut(ctx, data, Math.round((performance.now() - t0) * 1000) / 1000, true);
+      resData = data;
+      resEv = ev;
       const settle = () => {
         delete data.responsePending;
         ev.durationMs = Math.round((performance.now() - t0) * 1000) / 1000;
@@ -399,7 +470,7 @@ function patchRequestModule(mod: typeof http | typeof https, scheme: string): vo
     const origEnd = req.end.bind(req);
     req.write = function (chunk: unknown, ...rest: unknown[]) {
       if (reqBytes < maxBody && chunk !== undefined) {
-        const b = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+        const b = Buffer.isBuffer(chunk) || chunk instanceof Uint8Array ? Buffer.from(chunk as Uint8Array) : Buffer.from(String(chunk));
         reqBytes += b.length;
         reqChunks.push(b.subarray(0, Math.max(0, maxBody - (reqBytes - b.length))));
       }
@@ -408,14 +479,35 @@ function patchRequestModule(mod: typeof http | typeof https, scheme: string): vo
     } as typeof req.write;
     req.end = function (chunk?: unknown, ...rest: unknown[]) {
       if (chunk !== undefined && typeof chunk !== 'function' && reqBytes < maxBody) {
-        const b = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+        const b = Buffer.isBuffer(chunk) || chunk instanceof Uint8Array ? Buffer.from(chunk as Uint8Array) : Buffer.from(String(chunk));
         reqBytes += b.length;
         reqChunks.push(b);
       }
       // @ts-expect-error passthrough signature
       return origEnd(chunk, ...rest);
     } as typeof req.end;
+    req.on('finish', () => {
+      // Body kept streaming after headers arrived — top up the recorded
+      // requestBody with whatever was written by 'finish'.
+      if (resData && reqBytes) {
+        resData.requestBody = Buffer.concat(reqChunks).toString('utf8').slice(0, maxBody);
+        if (ctx.closed) ctx.repersist?.();
+      }
+    });
     req.on('error', (err) => {
+      // One event per outbound call — an error AFTER the response was
+      // recorded mutates that event rather than emitting a duplicate that
+      // would misalign replay matching.
+      if (resData) {
+        if (!resData.errorKind) {
+          resData.error = errorMessage(err);
+          resData.errorName = errorName(err);
+          resData.errorKind = classifyError(err);
+          if (resEv) resEv.status = 'error';
+          if (ctx.closed) ctx.repersist?.();
+        }
+        return;
+      }
       pushHttpOut(ctx, { method, url: redUrl, error: errorMessage(err), errorName: errorName(err), errorKind: classifyError(err) }, performance.now() - t0, false);
     });
     return req;
@@ -433,21 +525,48 @@ function patchRequestModule(mod: typeof http | typeof https, scheme: string): vo
 // replay fakes
 // ---------------------------------------------------------------------------
 
+/** Minimal socket stand-in — apps commonly touch res.socket/req.socket for
+ *  keep-alive tuning and remote-address checks. */
+function fakeSocket(): EventEmitter & { remoteAddress: string; remotePort: number; localAddress: string; setNoDelay: () => void; setKeepAlive: () => void; ref: () => void; unref: () => void; destroy: () => void } {
+  const s = new EventEmitter() as EventEmitter & {
+    remoteAddress: string;
+    remotePort: number;
+    localAddress: string;
+    setNoDelay: () => void;
+    setKeepAlive: () => void;
+    ref: () => void;
+    unref: () => void;
+    destroy: () => void;
+  };
+  s.remoteAddress = '127.0.0.1';
+  s.remotePort = 0;
+  s.localAddress = '127.0.0.1';
+  s.setNoDelay = () => {};
+  s.setKeepAlive = () => {};
+  s.ref = () => {};
+  s.unref = () => {};
+  s.destroy = () => {};
+  return s;
+}
+
 class FakeIncomingMessage extends Readable {
   statusCode?: number;
   statusMessage?: string;
   headers: Record<string, string | string[]> = {};
   rawHeaders: string[] = [];
   httpVersion = '1.1';
+  httpVersionMajor = 1;
+  httpVersionMinor = 1;
   complete = true;
   aborted = false;
   trailers: Record<string, string> = {};
   rawTrailers: string[] = [];
-  socket = null;
+  socket: unknown;
+  connection: unknown;
   private body: Buffer;
   private pushed = false;
 
-  setTimeout(): this {
+  setTimeout(_ms?: number, _cb?: () => void): this {
     return this;
   }
 
@@ -464,6 +583,8 @@ class FakeIncomingMessage extends Readable {
     }
     this.headers = hdrs;
     this.rawHeaders = Object.entries(hdrs).flatMap(([k, v]) => (Array.isArray(v) ? v.flatMap((x) => [k, x]) : [k, v]));
+    this.socket = fakeSocket();
+    this.connection = this.socket;
   }
 
   override _read(): void {
@@ -478,10 +599,14 @@ class FakeClientRequest extends EventEmitter {
   private chunks: Buffer[] = [];
   private headerMap = new Map<string, string>();
   private finished = false;
+  private destroyedFlag = false;
+  private timeoutCb?: () => void;
   aborted = false;
   readonly path: string;
   readonly protocol: string;
   readonly host: string;
+  readonly socket: unknown;
+  readonly connection: unknown;
   reusedSocket = false;
 
   constructor(
@@ -489,7 +614,8 @@ class FakeClientRequest extends EventEmitter {
     private readonly rec: HttpOutData | undefined,
     readonly method: string,
     private readonly url: string,
-    private readonly cb?: (res: http.IncomingMessage) => void,
+    cb: ((res: http.IncomingMessage) => void) | undefined,
+    signal?: AbortSignal,
   ) {
     super();
     try {
@@ -502,32 +628,49 @@ class FakeClientRequest extends EventEmitter {
       this.protocol = 'http:';
       this.host = '';
     }
+    this.socket = fakeSocket();
+    this.connection = this.socket;
+    // Node registers the request() callback as a 'response' listener.
+    if (cb) this.once('response', cb as (...a: unknown[]) => void);
+    if (signal) {
+      const onAbort = () => {
+        this.aborted = true;
+        this.emit('error', signal.reason instanceof Error ? signal.reason : Object.assign(new Error('The operation was aborted'), { code: 'ABORT_ERR' }));
+      };
+      if (signal.aborted) queueMicrotask(onAbort);
+      else signal.addEventListener('abort', onAbort, { once: true });
+    }
   }
 
-  write(chunk: unknown): boolean {
-    const b = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+  write(chunk: unknown, encOrCb?: unknown, cb?: unknown): boolean {
+    if (this.destroyedFlag) return false;
+    const b = Buffer.isBuffer(chunk) || chunk instanceof Uint8Array ? Buffer.from(chunk as Uint8Array) : Buffer.from(String(chunk));
     this.chunks.push(b);
+    const done = typeof encOrCb === 'function' ? encOrCb : typeof cb === 'function' ? cb : undefined;
+    if (done) queueMicrotask(done as () => void);
     return true;
   }
 
-  end(chunk?: unknown, cb?: () => void): this {
+  end(chunk?: unknown, encOrCb?: unknown, cb?: unknown): this {
+    const done =
+      typeof chunk === 'function' ? (chunk as () => void) : typeof encOrCb === 'function' ? (encOrCb as () => void) : typeof cb === 'function' ? (cb as () => void) : undefined;
     if (chunk !== undefined && typeof chunk !== 'function') {
-      this.chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+      const b = Buffer.isBuffer(chunk) || chunk instanceof Uint8Array ? Buffer.from(chunk as Uint8Array) : Buffer.from(String(chunk));
+      this.chunks.push(b);
     }
-    if (typeof chunk === 'function') cb = chunk as () => void;
     if (!this.finished) {
       this.finished = true;
       this.emit('finish');
       queueMicrotask(() => {
         this.respond();
-        cb?.();
+        done?.();
       });
     }
     return this;
   }
 
-  setHeader(name: string, value: string): this {
-    this.headerMap.set(name.toLowerCase(), String(value));
+  setHeader(name: string, value: string | string[]): this {
+    this.headerMap.set(name.toLowerCase(), Array.isArray(value) ? value.join(', ') : String(value));
     return this;
   }
   getHeader(name: string): string | undefined {
@@ -537,10 +680,23 @@ class FakeClientRequest extends EventEmitter {
     this.headerMap.delete(name.toLowerCase());
     return this;
   }
+  hasHeader(name: string): boolean {
+    return this.headerMap.has(name.toLowerCase());
+  }
   getHeaders(): Record<string, string> {
     return Object.fromEntries(this.headerMap);
   }
-  setTimeout(): this {
+  getHeaderNames(): string[] {
+    return [...this.headerMap.keys()];
+  }
+  getRawHeaderNames(): string[] {
+    return [...this.headerMap.keys()];
+  }
+  get headersSent(): boolean {
+    return this.finished;
+  }
+  setTimeout(_ms?: number, cb?: () => void): this {
+    this.timeoutCb = cb;
     return this;
   }
   setNoDelay(): this {
@@ -550,18 +706,35 @@ class FakeClientRequest extends EventEmitter {
     return this;
   }
   flushHeaders(): void {}
+  addTrailers(): void {}
+  cork(): void {}
+  uncork(): void {}
   get writableEnded(): boolean {
     return this.finished;
   }
+  get writableFinished(): boolean {
+    return this.finished;
+  }
+  get writableLength(): number {
+    return this.chunks.reduce((n, c) => n + c.length, 0);
+  }
+  get destroyed(): boolean {
+    return this.destroyedFlag;
+  }
   abort(): void {
     this.aborted = true;
+    this.destroyedFlag = true;
   }
   destroy(err?: Error): this {
+    this.destroyedFlag = true;
+    // Real ClientRequest emits 'error' unconditionally — unhandled 'error'
+    // crashing the replay is faithful to production behavior.
     if (err) this.emit('error', err);
     return this;
   }
 
   private respond(): void {
+    if (this.destroyedFlag) return;
     const rec = this.rec;
     const rawBody = this.chunks.length ? Buffer.concat(this.chunks).toString('utf8') : undefined;
     const rb = rawBody !== undefined ? this.ctx.redactor.redactBody(rawBody, undefined, 'http.out.requestBody') : undefined;
@@ -576,6 +749,7 @@ class FakeClientRequest extends EventEmitter {
     if (rec.errorKind === 'timeout') {
       const err = Object.assign(new Error(rec.error ?? 'ETIMEDOUT'), { code: 'ETIMEDOUT' });
       this.emit('timeout');
+      this.timeoutCb?.();
       this.emit('error', err);
       return;
     }
@@ -584,8 +758,7 @@ class FakeClientRequest extends EventEmitter {
       return;
     }
     const res = new FakeIncomingMessage(rec) as unknown as http.IncomingMessage;
-    if (this.cb) this.cb(res);
-    else this.emit('response', res);
+    this.emit('response', res);
   }
 }
 
@@ -595,6 +768,7 @@ function fakeClientRequest(
   method: string,
   url: string,
   cb?: (res: http.IncomingMessage) => void,
+  signal?: AbortSignal,
 ): http.ClientRequest {
-  return new FakeClientRequest(ctx, rec, method, url, cb) as unknown as http.ClientRequest;
+  return new FakeClientRequest(ctx, rec, method, url, cb, signal) as unknown as http.ClientRequest;
 }

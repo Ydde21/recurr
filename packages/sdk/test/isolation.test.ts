@@ -89,6 +89,30 @@ describe('installReplayIsolation', () => {
     expect(() => new Worker('x', { eval: true })).toThrow(RecurrIsolationError);
   });
 
+  it('blocks cluster.fork — reaches spawn internals past the child_process patch', async () => {
+    installReplayIsolation();
+    const cluster = (await import('node:cluster')).default;
+    expect(() => cluster.fork()).toThrow(RecurrIsolationError);
+  });
+
+  it('blocks native addon loading — unguarded native code', async () => {
+    installReplayIsolation();
+    expect(() => process.dlopen({}, '/tmp/evil.node', undefined as never)).toThrow(RecurrIsolationError);
+  });
+
+  it('blocks dangerous process.binding / _linkedBinding internals', async () => {
+    installReplayIsolation();
+    // Internal code uses internalBinding, not these public wrappers — gating
+    // them only affects app code reaching for C++ internals to bypass patches.
+    expect(() => process.binding('spawn_sync')).toThrow(RecurrIsolationError);
+    expect(() => process.binding('tcp_wrap')).toThrow(RecurrIsolationError);
+    expect(() => process.binding('udp_wrap')).toThrow(RecurrIsolationError);
+    const linked = (process as unknown as { _linkedBinding?: (n: string) => unknown })._linkedBinding;
+    if (linked) expect(() => linked('spawn_sync')).toThrow(RecurrIsolationError);
+    // Safe bindings still resolve — the gate is a blocklist, not a blanket ban.
+    expect(() => process.binding('natives')).not.toThrow();
+  });
+
   it('blocks dgram sends via callback error', async () => {
     installReplayIsolation();
     const sock = (await import('node:dgram')).createSocket('udp4');

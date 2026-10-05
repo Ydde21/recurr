@@ -63,6 +63,8 @@ export const DEFAULT_SENSITIVE_FIELDS: readonly string[] = [
 const DEFAULT_PLACEHOLDER = '[REDACTED]';
 const DEFAULT_MAX_BODY = 64 * 1024;
 const MAX_STRING = 32 * 1024;
+/** Cap on nodes walked per redactValue call — bounds CPU on hostile sizes. */
+const MAX_NODES = 50_000;
 
 function normalizeKey(key: string): string {
   return key.toLowerCase().replace(/[-_.\s]/g, '');
@@ -126,16 +128,32 @@ export class Redactor {
     return this.paths.some((p) => p === path || path.startsWith(p + '.') || path.startsWith(p + '['));
   }
 
-  /** Deep-redact an arbitrary JSON-ish value. Cycle-safe. */
+  /** Deep-redact an arbitrary JSON-ish value. Cycle-safe, depth-bounded, and
+   *  node-budgeted — hostile payloads can't hang capture, and exotic types
+   *  (BigInt, Map, functions) are rendered safe instead of crashing the
+   *  downstream JSON.stringify. */
   redactValue<T>(value: T, basePath = ''): RedactionResult<T> {
     const hits: string[] = [];
     const truncated: string[] = [];
-    const out = this.walk(value, basePath, 0, hits, truncated, new WeakSet());
+    const budget = { nodes: MAX_NODES };
+    const out = this.walk(value, basePath, 0, hits, truncated, new WeakSet(), budget);
     return { value: out as T, hits, truncated };
   }
 
-  private walk(value: unknown, path: string, depth: number, hits: string[], truncated: string[], seen: WeakSet<object>): unknown {
+  private walk(
+    value: unknown,
+    path: string,
+    depth: number,
+    hits: string[],
+    truncated: string[],
+    seen: WeakSet<object>,
+    budget: { nodes: number },
+  ): unknown {
     if (value === null || value === undefined) return value;
+    if (budget.nodes-- <= 0) {
+      truncated.push(path);
+      return '[NODE_BUDGET]';
+    }
     if (this.pathIsTargeted(path)) {
       hits.push(path);
       return this.placeholder;
@@ -147,6 +165,10 @@ export class Redactor {
       }
       return value;
     }
+    // Non-JSON scalars get explicit markers — BigInt would otherwise crash
+    // JSON.stringify at persist time and silently lose the whole record.
+    if (typeof value === 'bigint') return `${value}n`;
+    if (typeof value === 'symbol' || typeof value === 'function') return `[${typeof value}]`;
     if (typeof value !== 'object') return value;
     if (depth > this.maxDepth) {
       truncated.push(path);
@@ -157,23 +179,53 @@ export class Redactor {
       return '[CIRCULAR]';
     }
     seen.add(value);
-    if (Buffer.isBuffer(value) || value instanceof Uint8Array) {
-      const b = Buffer.isBuffer(value) ? value : Buffer.from(value);
-      const clipped = b.length > this.maxBodyBytes;
-      if (clipped) truncated.push(path);
-      return { $base64: (clipped ? b.subarray(0, this.maxBodyBytes) : b).toString('base64') };
-    }
-    if (Array.isArray(value)) {
-      return value.map((v, i) => this.walk(v, `${path}[${i}]`, depth + 1, hits, truncated, seen));
-    }
+    try {
+      if (Buffer.isBuffer(value) || value instanceof Uint8Array) {
+        const b = Buffer.isBuffer(value) ? value : Buffer.from(value);
+        const clipped = b.length > this.maxBodyBytes;
+        if (clipped) truncated.push(path);
+        return { $base64: (clipped ? b.subarray(0, this.maxBodyBytes) : b).toString('base64') };
+      }
+      if (value instanceof Map) {
+        truncated.push(path);
+        return `[Map:${value.size}]`;
+      }
+      if (value instanceof Set || value instanceof WeakMap || value instanceof WeakSet) {
+        truncated.push(path);
+        const size = 'size' in value && typeof value.size === 'number' ? `:${value.size}` : '';
+        return `[${value.constructor.name}${size}]`;
+      }
+      if (value instanceof Date) return value.toISOString();
+      if (Array.isArray(value)) {
+        return value.map((v, i) => this.walk(v, `${path}[${i}]`, depth + 1, hits, truncated, seen, budget));
+      }
     const obj = value as Record<string, unknown>;
     const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(obj)) {
+    // Object.keys itself can throw on a hostile Proxy — guard the whole
+    // enumeration, not just per-key reads.
+    let keys: string[];
+    try {
+      keys = Object.keys(obj);
+    } catch {
+      truncated.push(path);
+      return '[unreadable]';
+    }
+    // Object.keys (names only) + per-key guarded reads — Object.entries would
+    // let one throwing getter abort the entire walk and lose the record.
+    for (const k of keys) {
       const childPath = path ? `${path}.${k}` : k;
+      let v: unknown;
+      try {
+        v = obj[k];
+      } catch {
+        out[k] = '[getter threw]';
+        truncated.push(childPath);
+        continue;
+      }
       const childVal =
         this.isSensitiveKey(k) || this.pathIsTargeted(childPath)
           ? (hits.push(childPath), this.placeholder)
-          : this.walk(v, childPath, depth + 1, hits, truncated, seen);
+          : this.walk(v, childPath, depth + 1, hits, truncated, seen, budget);
       // `out['__proto__'] = x` would mutate the prototype, not set a key.
       if (k === '__proto__') {
         Object.defineProperty(out, k, { value: childVal, enumerable: true, writable: true, configurable: true });
@@ -181,7 +233,13 @@ export class Redactor {
         out[k] = childVal;
       }
     }
-    return out;
+      return out;
+    } finally {
+      // Remove on the way out — `seen` tracks the active path, not every
+      // object ever visited. A shared (DAG) reference should serialize
+      // twice; only a true cycle (still on the path) is marked [CIRCULAR].
+      seen.delete(value);
+    }
   }
 
   /** Redact a header map. Sensitive headers are replaced wholesale. */
@@ -192,11 +250,11 @@ export class Redactor {
     const hits: string[] = [];
     const out: Record<string, string | string[]> = {};
     for (const [k, v] of Object.entries(headers)) {
-      if (this.isSensitiveKey(k)) {
-        hits.push(`${basePath}.${k}`);
-        out[k] = this.placeholder;
+      const val = this.isSensitiveKey(k) ? (hits.push(`${basePath}.${k}`), this.placeholder) : v;
+      if (k === '__proto__') {
+        Object.defineProperty(out, k, { value: val, enumerable: true, writable: true, configurable: true });
       } else {
-        out[k] = v;
+        out[k] = val;
       }
     }
     return { value: out, hits, truncated: [] };

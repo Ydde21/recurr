@@ -83,8 +83,16 @@ export function installReplayIsolation(opts: IsolationOptions = {}): void {
     const cb = args.find((a): a is (err?: Error | null) => void => typeof a === 'function');
     const err = new RecurrIsolationError('udp send');
     if (cb) queueMicrotask(() => cb(err));
-    else this.emit('error', err);
+    else queueMicrotask(() => this.emit('error', err));
   } as dgram.Socket['send'];
+  // A UDP listener is an inbound surface just like a TCP listener — force it
+  // onto loopback + an ephemeral port rather than whatever the app asked for.
+  const origDgramBind = dgram.Socket.prototype.bind;
+  dgram.Socket.prototype.bind = function (this: dgram.Socket, ...args: unknown[]): void {
+    const cb = args.find((a): a is () => void => typeof a === 'function');
+    (origDgramBind as (...a: unknown[]) => void).call(this, { port: 0, address: '127.0.0.1' });
+    if (cb) queueMicrotask(cb);
+  } as typeof dgram.Socket.prototype.bind;
 
   // -- DNS -------------------------------------------------------------------
   // Lookups for allowlisted store hosts stay working — everything else fails.
@@ -101,18 +109,20 @@ export function installReplayIsolation(opts: IsolationOptions = {}): void {
       return;
     }
     const cb = rest.find((a): a is (...a: unknown[]) => void => typeof a === 'function');
-    cb?.(dnsErr(`lookup ${hostname}`), null, null);
+    // Real DNS is async — invoke on the next tick so callers that set flags
+    // after the call see the same ordering as in production.
+    setImmediate(() => cb?.(dnsErr(`lookup ${hostname}`), null, null));
   } as typeof dns.lookup;
   dns.resolve = function (hostname: string, ...rest: unknown[]): void {
     const cb = rest.find((a): a is (...a: unknown[]) => void => typeof a === 'function');
-    cb?.(dnsErr(`resolve ${hostname}`), []);
+    setImmediate(() => cb?.(dnsErr(`resolve ${hostname}`), []));
   } as typeof dns.resolve;
   for (const fn of ['resolve4', 'resolve6', 'resolveMx', 'resolveTxt', 'resolveSrv', 'resolveNs', 'resolveCname', 'reverse'] as const) {
     const orig = dns[fn];
     if (typeof orig === 'function') {
       (dns as Record<string, unknown>)[fn] = (...rest: unknown[]) => {
         const cb = rest.find((a): a is (...a: unknown[]) => void => typeof a === 'function');
-        cb?.(dnsErr(`${fn}`), []);
+        setImmediate(() => cb?.(dnsErr(`${fn}`), []));
       };
     }
   }
@@ -159,9 +169,10 @@ export function installReplayIsolation(opts: IsolationOptions = {}): void {
     error: new RecurrIsolationError('child_process.spawnSync'),
   })) as unknown as typeof childProcess.spawnSync;
 
-  // -- worker threads ----------------------------------------------------------
+  // -- worker threads / cluster --------------------------------------------------
   // A Worker runs a fresh module graph — none of our patches apply inside it,
-  // so worker code would get unguarded egress. Blocked outright.
+  // so worker code would get unguarded egress. Blocked outright. cluster.fork
+  // reaches internal spawn machinery that bypasses the child_process patch.
   try {
     const req = createRequire(import.meta.url);
     const wt = req('node:worker_threads') as { Worker: typeof import('node:worker_threads').Worker };
@@ -172,6 +183,68 @@ export function installReplayIsolation(opts: IsolationOptions = {}): void {
   } catch {
     /* worker_threads unavailable */
   }
+  try {
+    const req = createRequire(import.meta.url);
+    const cl = req('node:cluster') as { fork: (...a: unknown[]) => unknown };
+    cl.fork = () => {
+      throw new RecurrIsolationError('cluster.fork');
+    };
+  } catch {
+    /* cluster unavailable */
+  }
+
+  // -- native addons -------------------------------------------------------------
+  // A .node addon is uninstrumented native code — full host access with none
+  // of these patches. A replay target must not load one.
+  process.dlopen = function (...args: unknown[]): never {
+    throw new RecurrIsolationError(`process.dlopen (${String(args[1] ?? 'native addon').slice(0, 80)})`);
+  } as typeof process.dlopen;
+  try {
+    const req = createRequire(import.meta.url);
+    const Module = req('node:module') as unknown as { _extensions?: Record<string, unknown> };
+    if (Module._extensions?.['.node']) {
+      Module._extensions['.node'] = () => {
+        throw new RecurrIsolationError('require(.node native addon)');
+      };
+    }
+  } catch {
+    /* module internals unavailable */
+  }
+
+  // -- internal binding escape hatch ------------------------------------------
+  // process.binding/_linkedBinding expose C++ internals — 'spawn_sync',
+  // 'tcp_wrap', 'udp_wrap' etc. would bypass every JS-level patch above.
+  // Internal code uses internalBinding (separate), so gating the public
+  // surface only affects app code.
+  const DANGEROUS_BINDINGS = new Set([
+    'spawn_sync',
+    'process_wrap',
+    'tcp_wrap',
+    'udp_wrap',
+    'pipe_wrap',
+    'tty_wrap',
+    'signal_wrap',
+    'fs_event_wrap',
+    'cares_wrap',
+  ]);
+  const anyProc = process as unknown as {
+    binding?: (...a: string[]) => unknown;
+    _linkedBinding?: (...a: string[]) => unknown;
+  };
+  const origBinding = anyProc.binding?.bind(process);
+  if (origBinding) {
+    anyProc.binding = function (name: string, ...rest: string[]): unknown {
+      if (DANGEROUS_BINDINGS.has(name)) throw new RecurrIsolationError(`process.binding(${name})`);
+      return (origBinding as (...a: string[]) => unknown)(name, ...rest);
+    };
+  }
+  const origLinked = anyProc._linkedBinding?.bind(process);
+  if (origLinked) {
+    anyProc._linkedBinding = function (name: string, ...rest: string[]): unknown {
+      if (DANGEROUS_BINDINGS.has(name)) throw new RecurrIsolationError(`process._linkedBinding(${name})`);
+      return (origLinked as (...a: string[]) => unknown)(name, ...rest);
+    };
+  }
 }
 
 function describeTarget(options: unknown): string {
@@ -181,9 +254,12 @@ function describeTarget(options: unknown): string {
   if (Array.isArray(o)) o = o[0];
   if (typeof o === 'object' && o !== null) {
     const r = o as Record<string, unknown>;
+    // Unix-domain socket / windows named pipe — filesystem IPC, never allowed.
+    if (typeof r.path === 'string') return `unix:${r.path}`;
     const port = r.port ?? (r.protocol === 'https:' ? 443 : r.protocol === 'http:' ? 80 : '?');
     return `${r.host ?? r.hostname ?? '?'}:${port}`;
   }
+  if (typeof o === 'string' && (o.startsWith('/') || o.startsWith('.'))) return `unix:${o}`;
   return String(o);
 }
 

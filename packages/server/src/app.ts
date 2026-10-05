@@ -77,6 +77,14 @@ export function createApp(store: IncidentStore): Express {
         res.status(400).json({ error: 'invalid id' });
         return;
       }
+      if (typeof s.name !== 'string' || s.name.length > 512 || (s.notes !== undefined && typeof s.notes !== 'string')) {
+        res.status(400).json({ error: 'invalid name/notes' });
+        return;
+      }
+      if (s.createdAt !== undefined && (typeof s.createdAt !== 'string' || Number.isNaN(Date.parse(s.createdAt)))) {
+        res.status(400).json({ error: 'invalid createdAt' });
+        return;
+      }
       await store.saveRegression(s);
       res.status(201).json({ id: s.id });
     } catch (err) {

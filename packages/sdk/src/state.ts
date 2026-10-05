@@ -22,6 +22,9 @@ export interface RecurrState {
   replaySource?: ExecutionRecord;
   /** In-flight record saves, drained by flush(). */
   pending: Set<Promise<unknown>>;
+  /** Requests currently inside a capture/replay ctx — flush() must not
+   *  return while a response is still streaming (finalize hasn't run). */
+  inflight: number;
 }
 
 export function makeCtx(state: RecurrState): RuntimeCtx {
@@ -101,7 +104,8 @@ export function extractRequest(ctx: RuntimeCtx, req: RequestLike): CapturedHttpR
   const raw = req.body;
   if (raw !== undefined && raw !== null) {
     if (typeof raw === 'object' && !Buffer.isBuffer(raw) && !(raw instanceof Uint8Array)) {
-      body = safeJson(raw);
+      // Explicit marker — a silent drop would pretend there was no body.
+      body = safeJson(raw) ?? '[unserializable body]';
     } else if (Buffer.isBuffer(raw) || raw instanceof Uint8Array) {
       body = Buffer.from(raw as Uint8Array).toString('base64');
       bodyBase64 = true;

@@ -157,10 +157,50 @@ Or point the server at Postgres directly:
 - Replay processes bind loopback-only on ephemeral ports; instrumented egress
   (`fetch`, `http(s)`, `db`) is served from the record — no production systems
   are touched. A socket-level egress guard also refuses uninstrumented
-  outbound connections, DNS lookups, subprocesses and workers.
-- Sensitive env vars are not inherited by replay children.
+  outbound connections, DNS lookups, UDP sends, subprocesses, worker threads,
+  native addon loading (`process.dlopen` / `.node` requires) and dangerous
+  `process.binding`/`_linkedBinding` internals (`spawn_sync`, `tcp_wrap`, …).
+- A `NODE_OPTIONS` preload blocklist refuses ESM/CJS module loads of the
+  blocked subsystems (`node:child_process`, `node:worker_threads`, `node:dgram`,
+  `node:cluster`) so even a static `import { execSync }` fails at load time.
+- Sensitive env vars are not inherited by replay children (`*_KEY`, `*TOKEN*`,
+  `*PASS*`, `*DSN*`, `DATABASE_URL`, proxy vars, cloud credentials, kube/docker
+  config, …). A target-provided env can never override
+  `RECURR_REPLAY_ALLOW_NET`, `RECURR_REPLAY_INHERIT_ENV`, or `NODE_OPTIONS`.
 - Records imported via `recurr import` or posted to the collector are
   schema-validated; unsafe ids can't traverse the filesystem store.
+
+## Framework compatibility
+
+`recurr.middleware()` is connect-style `(req, res, next)`. Verified by the
+compat suite (`packages/sdk/test/compat.test.ts`):
+
+| Framework | Status | Notes |
+|---|---|---|
+| Express 4 | ✅ full | body via `express.json()`/`urlencoded()`/`raw()`; `errorMiddleware()` captures thrown/nexted errors |
+| Fastify 5 + `@fastify/middie` | ✅ capture | `req.body` is NOT populated in connect middleware (Fastify keeps the parsed body on its own wrapper) — body capture needs a preHandler or the raw body |
+| Koa 3 | ✅ capture via adapter | wrap: `app.use(async (ctx, next) => { await new Promise(r => mw(ctx.req, ctx.res, r)); await next(); })`; `req.body` needs `@koa/bodyparser`-style population |
+| `node:http` raw | ✅ manual | call the middleware inside your request handler; thrown handlers abort the record honestly |
+| Hono / fetch-style | ❌ unsupported | no `(req, res, next)` mount point — `Request`/`Response` objects bypass `http.IncomingMessage` teeing entirely |
+
+Multipart/form bodies, binary bodies, URL-encoded forms and compressed
+(gzip/deflate) responses are all verified — encoded/binary payloads store
+base64, textual bodies store UTF-8.
+
+## Capture limits & soak results
+
+| Limit | Default | Behavior when exceeded |
+|---|---|---|
+| `maxBodyBytes` (init option) | 64 KiB | body clipped at a valid UTF-8 boundary; `redaction.truncatedPaths` records `request.body`/`response.body` honestly |
+| `MAX_EVENTS` per record | 100,000 | `validateRecord` rejects; record fails safe |
+| `MAX_SEED_VALUES` | 1,000,000 | same |
+
+Soak suite (`packages/sdk/test/soak.test.ts`) exercises 100 KB / 1 MB / 10 MB
+payloads, 40-request concurrent bursts, aborted clients mid-response, and
+repeated captures: records stay bounded by `maxBodyBytes`, oversized bodies
+are flagged truncated, aborted requests persist honest partial records,
+concurrent records get unique ids with no seed/event cross-talk, and
+`await recurr.flush()` does not return until in-flight requests persist.
 
 ## Known limitations (MVP scope)
 
@@ -188,6 +228,15 @@ Or point the server at Postgres directly:
   are not captured. At replay they draw deterministic bytes from the
   record-seeded PRNG and emit a `replay.note` divergence rather than
   silently producing real entropy.
+- Dependencies that load native addons (`sharp`, `bcrypt` native, …) fail at
+  replay — `process.dlopen` is blocked because uninstrumented native code
+  would escape the sandbox entirely.
+- `matchScore` measures events + outcome: a response status/body/error
+  divergence docks the score once (it can't falsely report 100%), while the
+  per-field divergences stay visible in the report.
+- Filesystem access is not sandboxed — replayed code keeps read/write to the
+  replay child's working tree. Run replays on machines you consider
+  disposable for hostile-target scenarios.
 - Single-service replay; distributed multi-service replay is future work.
 
 ## Development

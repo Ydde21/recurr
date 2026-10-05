@@ -64,9 +64,6 @@ export interface DiffOptions {
   window?: number;
 }
 
-/** Fields that legitimately differ between runs — excluded from equality. */
-const VOLATILE_KEYS = new Set(['at', 'offsetMs', 'durationMs', 'seq']);
-
 const PREVIEW_LEN = 140;
 
 function preview(v: unknown): unknown {
@@ -123,7 +120,6 @@ function compareValues(
     const eo = expected as Record<string, unknown>;
     const ao = actual as Record<string, unknown>;
     for (const key of new Set([...Object.keys(eo), ...Object.keys(ao)])) {
-      if (VOLATILE_KEYS.has(key)) continue;
       compareValues(path ? `${path}.${key}` : key, eo[key], ao[key], out, kind, seq, depth + 1);
     }
     return;
@@ -230,11 +226,9 @@ export function diffExecutions(original: ExecutionRecord, replay: ExecutionRecor
     push({ type: 'response-status', expected: os, actual: rs, message: `response status ${os} → ${rs}` });
   }
   if (original.response?.body !== undefined || replay.response?.body !== undefined) {
-    const before = divergences.length;
+    // compareValues on the parsed bodies is authoritative — JSON key order
+    // differences are semantically identical and must not diverge.
     compareValues('response.body', tryJson(original.response?.body), tryJson(replay.response?.body), divergences, 'response', -1, 0);
-    if (divergences.length === before && normalizeBody(original.response?.body) !== normalizeBody(replay.response?.body)) {
-      push({ type: 'response-body', expected: preview(original.response?.body), actual: preview(replay.response?.body), message: 'response body differs' });
-    }
   }
 
   // Error comparison
@@ -275,8 +269,23 @@ export function diffExecutions(original: ExecutionRecord, replay: ExecutionRecor
   // Score = clean aligned fraction of max(|a|,|b|); an empty-vs-empty record
   // pair with no divergences is a genuine 100.
   const seedDivergences = divergences.filter((d) => d.type === 'seed-usage' && d.severity !== 'info').length;
+  // Response/error-level divergences aren't part of event alignment but ARE
+  // part of reproduced behavior — a different response body with identical
+  // events must not score 100. Collapse them to a single dock: the outcome
+  // differed once, not once per differing body field (event mismatches
+  // dedupe per event via mismatchSeqs; the response deserves the same).
+  const outcomeDiverged = divergences.some(
+    (d) =>
+      d.severity !== 'info' &&
+      (d.type === 'response-status' ||
+        d.type === 'response-body' ||
+        d.type === 'error' ||
+        (d.type === 'field-mismatch' && d.seq === -1)),
+  )
+    ? 1
+    : 0;
   const total = Math.max(a.length, b.length, 1);
-  const clean = total - missing - extra - mismatchSeqs.size - seedDivergences;
+  const clean = total - missing - extra - mismatchSeqs.size - seedDivergences - outcomeDiverged;
   const matchScore = Math.max(0, Math.min(100, Math.round((clean / total) * 100)));
 
   const originalMs = original.response?.durationMs ?? lastOffset(original);
@@ -310,15 +319,6 @@ function tryJson(body: string | undefined): unknown {
   if (body === undefined) return undefined;
   try {
     return JSON.parse(body);
-  } catch {
-    return body;
-  }
-}
-
-function normalizeBody(body: string | undefined): string {
-  if (body === undefined) return '';
-  try {
-    return JSON.stringify(JSON.parse(body));
   } catch {
     return body;
   }

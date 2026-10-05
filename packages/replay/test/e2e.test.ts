@@ -171,6 +171,42 @@ describe('e2e capture → replay → diff', () => {
     expect(report.divergences.some((d) => d.type === 'response-status')).toBe(true);
   }, 60_000);
 
+  it('concurrent replays of the same incident both succeed and persist distinct records', async () => {
+    const [a, b] = await Promise.all([
+      replayIncident({
+        store,
+        storeSpec,
+        incidentId,
+        target: {
+          command: 'node dist/index.js',
+          cwd: demoDir,
+          env: { RECURR_STORE: storeSpec, PAYMENT_URL: 'http://127.0.0.1:1/dead' },
+        },
+        timeoutMs: 45_000,
+      }),
+      replayIncident({
+        store,
+        storeSpec,
+        incidentId,
+        target: {
+          command: 'node dist/index.js',
+          cwd: demoDir,
+          env: { RECURR_STORE: storeSpec, PAYMENT_URL: 'http://127.0.0.1:1/dead' },
+        },
+        timeoutMs: 45_000,
+      }),
+    ]);
+    expect(a.replay.id).not.toBe(b.replay.id);
+    expect(a.report.outcomeMatch).toBe(true);
+    expect(b.report.outcomeMatch).toBe(true);
+    // Both replay records persisted against the same incident.
+    const replays = await store.listReplays(incidentId);
+    expect(replays.length).toBeGreaterThanOrEqual(2);
+    const ids = new Set(replays.map((r) => r.id));
+    expect(ids.has(a.replay.id)).toBe(true);
+    expect(ids.has(b.replay.id)).toBe(true);
+  }, 90_000);
+
   it('strips sensitive env vars from the replay child', () => {
     const env = sanitizeEnv({
       PATH: '/usr/bin',

@@ -71,6 +71,9 @@ export class FileStore implements IncidentStore {
         const raw = await fs.readFile(path.join(this.executionsDir(), f), 'utf8');
         const rec = JSON.parse(raw) as ExecutionRecord;
         const s = summarize(rec);
+        // Corrupt-but-parseable records (e.g. capturedAt: 42) must not kill
+        // the whole listing — skip them the same as unreadable files.
+        if (typeof s.capturedAt !== 'string') continue;
         if (filter.kind && s.kind !== filter.kind) continue;
         if (filter.service && s.service !== filter.service) continue;
         summaries.push(s);

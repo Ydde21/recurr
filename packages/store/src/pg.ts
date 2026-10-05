@@ -59,7 +59,9 @@ export class PgStore implements IncidentStore {
       `INSERT INTO executions (id, kind, replay_of, service, env, method, path, status, error_name, captured_at, duration_ms, record)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
        ON CONFLICT (id) DO UPDATE SET
-         record = EXCLUDED.record, status = EXCLUDED.status, error_name = EXCLUDED.error_name,
+         record = EXCLUDED.record, kind = EXCLUDED.kind, replay_of = EXCLUDED.replay_of,
+         service = EXCLUDED.service, env = EXCLUDED.env, method = EXCLUDED.method,
+         path = EXCLUDED.path, status = EXCLUDED.status, error_name = EXCLUDED.error_name,
          duration_ms = EXCLUDED.duration_ms, captured_at = EXCLUDED.captured_at`,
       [s.id, s.kind, s.replayOf ?? null, s.service, s.env, s.method ?? null, s.path ?? null, s.status ?? null, s.errorName ?? null, s.capturedAt, s.durationMs ?? null, JSON.stringify(record)],
     );

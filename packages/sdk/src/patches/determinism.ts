@@ -167,26 +167,32 @@ export function installDeterminism(): void {
   }
 
   // -- Date ------------------------------------------------------------------
-  // One subclass for both modes: counts clock reads inside a ctx, returns real
-  // values in capture, shifted values in replay. Applies process-wide so
-  // timestamps outside a request context also mirror the incident timeline.
-  class RecurrDate extends RealDate {
-    constructor(...args: unknown[]) {
-      const ctx = als.getStore();
-      if (ctx && !ctx.bookkeeping) ctx.timeReads++;
-      if (args.length === 0) super(RealDate.now() + replayOffsetMs);
-      else super(...(args as []));
+  // Function-based shim (not a subclass): `Date()` without `new` must still
+  // return a string — a class would throw TypeError on that legal call form.
+  // Sharing RealDate.prototype keeps `d instanceof Date` working for both
+  // pre- and post-patch dates. Counts clock reads inside a ctx; values are
+  // real in capture and shifted to the incident wall-time in replay.
+  function RecurrDate(this: unknown, ...args: unknown[]): unknown {
+    const ctx = als.getStore();
+    // Only wall-clock reads count — `new Date('2020-01-01')` constructs a
+    // fixed instant and consumes no nondeterminism.
+    if (ctx && !ctx.bookkeeping && (args.length === 0 || new.target === undefined)) ctx.timeReads++;
+    const base = args.length === 0 ? RealDate.now() + replayOffsetMs : undefined;
+    if (new.target === undefined) {
+      // Date() — returns a string, not an object.
+      return new RealDate(base ?? (RealDate.now() + replayOffsetMs)).toString();
     }
-    static override now(): number {
+    return base === undefined ? Reflect.construct(RealDate, args) : new RealDate(base);
+  }
+  RecurrDate.prototype = RealDate.prototype;
+  Object.assign(RecurrDate, {
+    now(): number {
       const ctx = als.getStore();
       if (ctx && !ctx.bookkeeping) ctx.timeReads++;
       return RealDate.now() + replayOffsetMs;
-    }
-    // Dates created before the patch landed are plain Date instances —
-    // `x instanceof Date` must still hold for them inside app code.
-    static override [Symbol.hasInstance](x: unknown): boolean {
-      return x instanceof RealDate;
-    }
-  }
+    },
+    UTC: RealDate.UTC,
+    parse: RealDate.parse,
+  });
   globalThis.Date = RecurrDate as unknown as DateConstructor;
 }

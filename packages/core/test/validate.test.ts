@@ -52,6 +52,49 @@ describe('validateRecord', () => {
     expect(validateRecord(rec({ service: { name: '' } as never })).ok).toBe(false);
     expect(validateRecord(rec({ capturedAt: 'not-a-date' })).ok).toBe(false);
   });
+
+  it('rejects hostile event entries', () => {
+    const base = { seq: 1, at: '2026-01-01T00:00:00Z', offsetMs: 0, kind: 'custom' };
+    expect(validateRecord(rec({ events: [{ ...base, seq: Number.NaN }] })).ok).toBe(false);
+    expect(validateRecord(rec({ events: [{ ...base, seq: Infinity }] })).ok).toBe(false);
+    expect(validateRecord(rec({ events: [{ ...base, kind: 'exec.shell' }] })).ok).toBe(false);
+    expect(validateRecord(rec({ events: [null] })).ok).toBe(false);
+    expect(validateRecord(rec({ events: ['custom'] })).ok).toBe(false);
+  });
+
+  it('rejects hostile seed payloads', () => {
+    // Elements are replayed verbatim — a string here would inject into app arithmetic.
+    expect(
+      validateRecord(rec({ seed: { startedAtWallMs: 0, random: ['0.5' as never], uuids: [], prngSeed: 0 } })).ok,
+    ).toBe(false);
+    expect(
+      validateRecord(rec({ seed: { startedAtWallMs: 0, random: [Number.NaN], uuids: [], prngSeed: 0 } })).ok,
+    ).toBe(false);
+    expect(
+      validateRecord(rec({ seed: { startedAtWallMs: 0, random: [], uuids: [42 as never], prngSeed: 0 } })).ok,
+    ).toBe(false);
+    expect(
+      validateRecord(rec({ seed: { startedAtWallMs: Number.NaN, random: [], uuids: [], prngSeed: 0 } })).ok,
+    ).toBe(false);
+  });
+
+  it('rejects oversized event arrays (bounded work on hostile records)', () => {
+    const huge = Array.from({ length: 100_001 }, (_, i) => ({ seq: i, at: 'x', offsetMs: i, kind: 'custom' }));
+    const v = validateRecord(rec({ events: huge }));
+    expect(v.ok).toBe(false);
+    if (!v.ok) expect(v.error).toMatch(/events exceeds cap/);
+  });
+
+  it('rejects malformed request/response blocks', () => {
+    expect(validateRecord(rec({ request: { method: 42, url: '/x', headers: {} } as never })).ok).toBe(false);
+    expect(validateRecord(rec({ request: { method: 'GET', url: '/x', headers: 'bogus' } as never })).ok).toBe(false);
+    expect(validateRecord(rec({ response: { status: 500.5 } as never })).ok).toBe(false);
+    expect(validateRecord(rec({ response: { status: 'ok' } as never })).ok).toBe(false);
+  });
+
+  it('rejects a replay pointing at a traversal id', () => {
+    expect(validateRecord(rec({ kind: 'replay', replayOf: '../escape' })).ok).toBe(false);
+  });
 });
 
 describe('isSafeRecordId', () => {

@@ -46,6 +46,7 @@ export async function init(config: RecurrConfig): Promise<Recurr> {
     store,
     redactor,
     pending: new Set(),
+    inflight: 0,
   };
 
   if (env.mode !== 'off') {
@@ -122,6 +123,11 @@ class RecurrHandle implements Recurr {
   }
 
   async flush(): Promise<void> {
-    await Promise.allSettled([...this.state.pending]);
+    // Drain until stable — record saves are queued from async finalize chains
+    // and requests can still be mid-flight when flush is called.
+    while (this.state.pending.size > 0 || this.state.inflight > 0) {
+      await Promise.allSettled([...this.state.pending]);
+      await new Promise((r) => setImmediate(r));
+    }
   }
 }

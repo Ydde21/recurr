@@ -82,13 +82,17 @@ function commandOf(text: string): string {
   return normalizeSql(text).split(' ')[0]?.toUpperCase() ?? 'QUERY';
 }
 
-function resultFromRecorded(rec: DbQueryData | undefined): { rows: unknown[]; rowCount: number; command: string; fields: never[] } {
+function resultFromRecorded(rec: DbQueryData | undefined): { rows: unknown[]; rowCount: number; command: string; fields: { name: string; dataTypeID: number }[] } {
   const rows = rec?.rows ?? [];
+  // pg fills `fields` with column metadata — derive names from row keys so
+  // apps reading res.fields[i].name don't crash on undefined.
+  const first = rows.find((r) => r !== null && typeof r === 'object') as Record<string, unknown> | undefined;
+  const fields = first ? Object.keys(first).map((name) => ({ name, dataTypeID: 0 })) : [];
   return {
     rows,
     rowCount: rec?.rowCount ?? rows.length,
     command: rec ? commandOf(rec.text) : 'QUERY',
-    fields: [],
+    fields,
   };
 }
 
@@ -101,7 +105,7 @@ function errorFromRecorded(rec: DbQueryData | undefined): Error | null {
 
 /** Thenable + EventEmitter-shaped result covering both consumer styles. */
 function fakeSubmittable(
-  res: { rows: unknown[]; rowCount: number; command: string; fields: never[] },
+  res: { rows: unknown[]; rowCount: number; command: string; fields: { name: string; dataTypeID: number }[] },
   err: Error | null,
 ): EventEmitter & Promise<typeof res> {
   const q = new EventEmitter();
