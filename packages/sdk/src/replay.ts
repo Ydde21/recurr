@@ -1,25 +1,57 @@
 import http from 'node:http';
 import https from 'node:https';
 import type { ExecutionRecord } from '@recurr/core';
-import { installDateShift } from './patches/determinism.js';
+import { setReplayOffset } from './patches/determinism.js';
+import { installReplayIsolation } from './patches/isolation.js';
+import { envConfig } from './config.js';
 import type { RecurrState } from './state.js';
+
+/** The record store must stay reachable for saves — pg:/http: store specs
+ *  resolve to an allowlisted host:port; everything else stays sealed. */
+function storeTargets(spec: string): string[] {
+  try {
+    const pgUrl = spec.startsWith('pg:') ? spec.slice(3) : /^postgres(ql)?:/.test(spec) ? spec : undefined;
+    if (pgUrl !== undefined) {
+      const u = new URL(pgUrl);
+      return [`${u.hostname}:${u.port || '5432'}`];
+    }
+    if (spec.startsWith('http:') || spec.startsWith('https:')) {
+      const u = new URL(spec);
+      return [`${u.hostname}:${u.port || (u.protocol === 'https:' ? '443' : '80')}`];
+    }
+  } catch {
+    /* malformed spec — nothing allowed */
+  }
+  return [];
+}
 
 /**
  * Replay-mode bootstrap, called by init() when RECURR_MODE=replay.
  *
- * 1. Load the source incident from the store.
+ * 1. Load the source incident from the store (following replayOf chains so a
+ *    replay record passed as the source resolves to the original incident).
  * 2. Shift the process clock to the original wall time.
- * 3. Hijack http(s).Server.listen — replay apps always bind 127.0.0.1:0
+ * 3. Install the egress guard — no outbound sockets, DNS, or subprocesses.
+ * 4. Hijack http(s).Server.listen — replay apps always bind 127.0.0.1:0
  *    (ephemeral loopback only) and announce the port to the orchestrator
  *    over IPC.
  */
 export async function setupReplay(state: RecurrState, replayOf: string): Promise<void> {
-  const source = await state.store.get(replayOf);
+  let source = await state.store.get(replayOf);
   if (!source) {
     throw new Error(`[recurr] replay source ${replayOf} not found in store`);
   }
+  // A replay record handed in as the source resolves to the original incident —
+  // its captured seed/events are the meaningful ones, not the replay's.
+  let hops = 0;
+  while (source.kind === 'replay' && source.replayOf) {
+    const parent = await state.store.get(source.replayOf);
+    if (!parent || hops++ > 16) break;
+    source = parent;
+  }
   state.replaySource = source;
-  installDateShift(source.seed.startedAtWallMs);
+  installReplayIsolation({ allowHosts: storeTargets(envConfig().storeSpec) });
+  setReplayOffset(source.seed.startedAtWallMs);
   installReplayListen();
 }
 

@@ -19,13 +19,20 @@ describe('Redactor', () => {
     expect(res.hits.length).toBe(3);
   });
 
-  it('redacts compound sensitive names (password_hash, session_token)', () => {
+  it('redacts compound sensitive names (password_hash, session_token, x-session-id, jwt)', () => {
     const r = new Redactor();
     const res = r.redactValue({ password_hash: 'abc', user_session_token: 't', author: 'grace' });
     const v = res.value as Record<string, string>;
     expect(v.password_hash).toBe('[REDACTED]');
     expect(v.user_session_token).toBe('[REDACTED]');
     expect(v.author).toBe('grace');
+
+    // Compound header names that only appear via substring matching.
+    const h = r.redactHeaders({ 'x-session-id': 's1', 'x-csrf-token': 'c', 'x-jwt': 'j', 'x-trace-id': 't' }, 'request.headers');
+    expect(h.value['x-session-id']).toBe('[REDACTED]');
+    expect(h.value['x-csrf-token']).toBe('[REDACTED]');
+    expect(h.value['x-jwt']).toBe('[REDACTED]');
+    expect(h.value['x-trace-id']).toBe('t');
   });
 
   it('redacts headers', () => {
@@ -78,5 +85,48 @@ describe('Redactor', () => {
     const res = r.redactBody(big, 'text/plain', 'response.body');
     expect(res.truncated.length).toBeGreaterThan(0);
     expect(Buffer.byteLength(res.value!, 'utf8')).toBeLessThanOrEqual(64);
+  });
+
+  it('survives circular structures', () => {
+    const r = new Redactor();
+    const a: Record<string, unknown> = { name: 'a' };
+    a.self = a;
+    a.list = [a];
+    const res = r.redactValue(a);
+    const v = res.value as { self: string; list: string[] };
+    expect(v.self).toBe('[CIRCULAR]');
+    expect(v.list[0]).toBe('[CIRCULAR]');
+  });
+
+  it('does not pollute prototypes on __proto__ keys', () => {
+    const r = new Redactor();
+    const res = r.redactValue(JSON.parse('{"__proto__":{"polluted":1},"ok":true}'));
+    const v = res.value as Record<string, unknown>;
+    expect(Object.prototype.hasOwnProperty.call(v, '__proto__')).toBe(true);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    expect(v.ok).toBe(true);
+    expect(() => JSON.stringify(res.value)).not.toThrow();
+  });
+
+  it('redacts URL userinfo passwords', () => {
+    const r = new Redactor();
+    const res = r.redactUrl('https://user:sekretpass@example.com/path?q=1');
+    expect(res.value).not.toContain('sekretpass');
+    expect(res.value).toContain('example.com');
+    expect(res.hits).toContain('url.userinfo.password');
+  });
+
+  it('leaves malformed JSON bodies as truncated text, unharmed', () => {
+    const r = new Redactor();
+    const res = r.redactBody('{not json at all', 'application/json', 'request.body');
+    expect(res.value).toBe('{not json at all');
+  });
+
+  it('leaves non-JSON text bodies untouched even with secrets-looking strings', () => {
+    const r = new Redactor();
+    const res = r.redactBody('plain text password=hunter2', 'text/plain', 'request.body');
+    // Not parseable → returned verbatim. Documented limitation: free-form
+    // text can't be field-redacted; use redaction.paths or structured bodies.
+    expect(res.value).toContain('password=hunter2');
   });
 });

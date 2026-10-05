@@ -14,29 +14,38 @@ export class PgStore implements IncidentStore {
   constructor(connectionString: string);
   constructor(pool: pg.Pool);
   constructor(arg: string | pg.Pool) {
-    this.pool = typeof arg === 'string' ? new pg.Pool({ connectionString: arg }) : arg;
+    this.pool =
+      typeof arg === 'string'
+        ? new pg.Pool({ connectionString: arg, connectionTimeoutMillis: 10_000 })
+        : arg;
   }
 
-  /** Apply SQL migrations in lexicographic order. Idempotent. */
+  /** Apply SQL migrations in lexicographic order. Idempotent; safe under
+   *  concurrent boots via a Postgres advisory lock. */
   async migrate(): Promise<string[]> {
     const applied: string[] = [];
     const files = (await fs.readdir(MIGRATIONS_DIR)).filter((f) => f.endsWith('.sql')).sort();
     const client = await this.pool.connect();
     try {
-      for (const f of files) {
-        const { rows } = await client.query('SELECT 1 FROM _recurr_migrations WHERE name = $1', [f]).catch(() => ({ rows: [] as never[] }));
-        if (rows.length > 0) continue;
-        const sql = await fs.readFile(path.join(MIGRATIONS_DIR, f), 'utf8');
-        await client.query('BEGIN');
-        try {
-          await client.query(sql);
-          await client.query('INSERT INTO _recurr_migrations (name) VALUES ($1)', [f]);
-          await client.query('COMMIT');
-          applied.push(f);
-        } catch (err) {
-          await client.query('ROLLBACK');
-          throw err;
+      await client.query('SELECT pg_advisory_lock(727207)');
+      try {
+        for (const f of files) {
+          const { rows } = await client.query('SELECT 1 FROM _recurr_migrations WHERE name = $1', [f]).catch(() => ({ rows: [] as never[] }));
+          if (rows.length > 0) continue;
+          const sql = await fs.readFile(path.join(MIGRATIONS_DIR, f), 'utf8');
+          await client.query('BEGIN');
+          try {
+            await client.query(sql);
+            await client.query('INSERT INTO _recurr_migrations (name) VALUES ($1)', [f]);
+            await client.query('COMMIT');
+            applied.push(f);
+          } catch (err) {
+            await client.query('ROLLBACK');
+            throw err;
+          }
         }
+      } finally {
+        await client.query('SELECT pg_advisory_unlock(727207)').catch(() => {});
       }
     } finally {
       client.release();
@@ -49,7 +58,9 @@ export class PgStore implements IncidentStore {
     await this.pool.query(
       `INSERT INTO executions (id, kind, replay_of, service, env, method, path, status, error_name, captured_at, duration_ms, record)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-       ON CONFLICT (id) DO UPDATE SET record = EXCLUDED.record`,
+       ON CONFLICT (id) DO UPDATE SET
+         record = EXCLUDED.record, status = EXCLUDED.status, error_name = EXCLUDED.error_name,
+         duration_ms = EXCLUDED.duration_ms, captured_at = EXCLUDED.captured_at`,
       [s.id, s.kind, s.replayOf ?? null, s.service, s.env, s.method ?? null, s.path ?? null, s.status ?? null, s.errorName ?? null, s.capturedAt, s.durationMs ?? null, JSON.stringify(record)],
     );
   }

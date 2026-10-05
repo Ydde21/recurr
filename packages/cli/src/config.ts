@@ -28,6 +28,10 @@ export interface ResolvedStore {
 /** --store flag > RECURR_STORE env > .recurr/config.json > fs:.recurr/store */
 export async function resolveStore(flag?: string, cwd = process.cwd()): Promise<ResolvedStore> {
   const cfg = await loadConfig(cwd);
-  const spec = flag ?? process.env.RECURR_STORE ?? cfg.store ?? `fs:${path.join(CONFIG_DIR, 'store')}`;
+  let spec = flag ?? process.env.RECURR_STORE ?? cfg.store ?? `fs:${path.join(CONFIG_DIR, 'store')}`;
+  // fs specs must be absolute: replay children run with --cwd and would
+  // otherwise resolve the same relative path against a different directory.
+  if (spec.startsWith('fs:')) spec = `fs:${path.resolve(cwd, spec.slice(3))}`;
+  else if (!/^(pg:|postgres(ql)?:|https?:)/.test(spec)) spec = `fs:${path.resolve(cwd, spec)}`;
   return { store: openStore(spec), spec };
 }

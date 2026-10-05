@@ -11,7 +11,7 @@ import {
 } from '@recurr/core';
 import type { IncidentStore } from '@recurr/store';
 import type { RecurrConfig } from './config.js';
-import { offsetMs, pushEvent, type RuntimeCtx } from './context.js';
+import { als, offsetMs, pushEvent, type RuntimeCtx } from './context.js';
 
 export interface RecurrState {
   cfg: RecurrConfig;
@@ -40,10 +40,16 @@ export function makeCtx(state: RecurrState): RuntimeCtx {
     uuidSeq: source ? [...source.seed.uuids] : [],
     randomIdx: 0,
     uuidIdx: 0,
+    randomReads: 0,
+    uuidReads: 0,
+    timeReads: 0,
     prng: mulberry32(seedFromString(source?.id ?? id)),
     replaySource: source,
     dbCursor: 0,
     httpOutCursor: 0,
+    pending: [],
+    closed: false,
+    flags: new Set(),
     redactionHits: [],
     truncatedPaths: [],
     config: state.cfg,
@@ -138,6 +144,9 @@ export function buildRecord(
   resBodyBase64: boolean,
 ): ExecutionRecord {
   const request = extractRequest(ctx, req);
+  ctx.bookkeeping = true;
+  const capturedAt = new Date().toISOString();
+  ctx.bookkeeping = false;
   const resHeaders: Record<string, string | string[]> = {};
   for (const [k, v] of Object.entries(res.getHeaders())) {
     if (v !== undefined) resHeaders[k] = Array.isArray(v) ? v.map(String) : String(v);
@@ -165,7 +174,7 @@ export function buildRecord(
       runtime: `node ${process.version}`,
     },
     environment: { name: state.cfg.env ?? process.env.NODE_ENV ?? 'development' },
-    capturedAt: new Date().toISOString(),
+    capturedAt,
     trigger: { type: ctx.mode === 'replay' ? 'replay' : 'http' },
     request,
     response: {
@@ -179,16 +188,19 @@ export function buildRecord(
     auth: ctx.auth,
     seed: {
       startedAtWallMs: ctx.startedWallMs,
-      random: ctx.mode === 'replay' ? ctx.randomSeq.slice(0, ctx.randomIdx) : ctx.randomSeq,
-      uuids: ctx.mode === 'replay' ? ctx.uuidSeq.slice(0, ctx.uuidIdx) : ctx.uuidSeq,
+      random: ctx.mode === 'replay' ? ctx.randomSeq.slice(0, Math.min(ctx.randomReads, ctx.randomSeq.length)) : ctx.randomSeq,
+      uuids: ctx.mode === 'replay' ? ctx.uuidSeq.slice(0, Math.min(ctx.uuidReads, ctx.uuidSeq.length)) : ctx.uuidSeq,
       prngSeed: seedFromString(ctx.recordId),
+      ...(ctx.mode === 'replay'
+        ? { randomConsumed: ctx.randomReads, uuidConsumed: ctx.uuidReads, timeReads: ctx.timeReads }
+        : { timeReads: ctx.timeReads }),
     },
     events: ctx.events,
     redaction: {
       redactedPaths: dedupe(ctx.redactionHits),
       truncatedPaths: dedupe(ctx.truncatedPaths),
     },
-    labels: state.cfg.labels,
+    labels: { ...state.cfg.labels, ...(ctx.aborted ? { aborted: 'true' } : {}) },
   };
 }
 
@@ -203,13 +215,19 @@ export function shouldPersist(ctx: RuntimeCtx, state: RecurrState, status: numbe
 }
 
 export function persist(ctx: RuntimeCtx, state: RecurrState, record: ExecutionRecord): void {
-  const p = state.store
-    .save(record)
-    .catch((err) => console.error('[recurr] failed to persist record:', err))
-    .finally(() => state.pending.delete(p));
-  state.pending.add(p);
+  // Save outside the request's ALS context — internal store I/O (tmp-file
+  // randomness, a collector POST via fetch, pg writes) must never consume or
+  // be intercepted by the app's nondeterminism/egress channels.
+  let p: Promise<unknown>;
+  als.exit(() => {
+    p = state.store
+      .save(record)
+      .catch((err) => console.error('[recurr] failed to persist record:', err))
+      .finally(() => state.pending.delete(p));
+  });
+  state.pending.add(p!);
   if (ctx.mode === 'replay' && typeof process.send === 'function') {
-    void p.then(() => {
+    void p!.then(() => {
       try {
         process.send?.({ type: 'recurr:done', id: record.id });
       } catch {

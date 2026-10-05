@@ -1,7 +1,13 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { summarize, type ExecutionRecord, type ExecutionSummary, type RegressionScenario } from '@recurr/core';
+import { isSafeRecordId, summarize, type ExecutionRecord, type ExecutionSummary, type RegressionScenario } from '@recurr/core';
 import type { IncidentStore, ListFilter } from './store.js';
+
+/** Record ids become file names — never let one traverse the store dir. */
+function safeFileName(id: string): string {
+  if (!isSafeRecordId(id)) throw new Error(`invalid record id: ${JSON.stringify(id).slice(0, 80)}`);
+  return `${id}.json`;
+}
 
 /**
  * Filesystem store — default for local development and `recurr` CLI use.
@@ -27,16 +33,24 @@ export class FileStore implements IncidentStore {
 
   async save(record: ExecutionRecord): Promise<void> {
     await this.ensure();
-    const file = path.join(this.executionsDir(), `${record.id}.json`);
-    const tmp = `${file}.tmp-${process.pid}`;
+    const file = path.join(this.executionsDir(), safeFileName(record.id));
+    // Deterministic tmp name (no Math.random — internal ops must not pollute
+    // a caller's nondeterminism capture if they run inside a request ctx).
+    // Leading '.' keeps it out of `RUN-*`/`*.json` globs during the rename window.
+    const tmp = path.join(this.executionsDir(), `.tmp-${process.pid}-${FileStore.writeSeq++}-${record.id}`);
     await fs.writeFile(tmp, JSON.stringify(record, null, 2));
     await fs.rename(tmp, file);
   }
+  private static writeSeq = 0;
 
   async get(id: string): Promise<ExecutionRecord | null> {
     try {
-      const raw = await fs.readFile(path.join(this.executionsDir(), `${id}.json`), 'utf8');
-      return JSON.parse(raw) as ExecutionRecord;
+      const raw = await fs.readFile(path.join(this.executionsDir(), safeFileName(id)), 'utf8');
+      try {
+        return JSON.parse(raw) as ExecutionRecord;
+      } catch {
+        throw new Error(`record ${id} is corrupt (invalid JSON)`);
+      }
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
       throw err;
@@ -75,7 +89,7 @@ export class FileStore implements IncidentStore {
 
   async saveRegression(scenario: RegressionScenario): Promise<void> {
     await this.ensure();
-    const file = path.join(this.regressionsDir(), `${scenario.id}.json`);
+    const file = path.join(this.regressionsDir(), safeFileName(scenario.id));
     await fs.writeFile(file, JSON.stringify(scenario, null, 2));
   }
 

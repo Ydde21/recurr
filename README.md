@@ -63,17 +63,32 @@ recurr replay RUN-KFE489 -t "node dist/index.js"
 The replay engine spawns your app with `RECURR_MODE=replay`. Inside that
 process:
 
-- `listen()` is hijacked to `127.0.0.1:0` — loopback only, ephemeral port.
-- `db.query` never touches a database — recorded rowsets are returned in order.
+- `listen()` is hijacked to `127.0.0.1:0` — loopback only, ephemeral port
+  (covers `http`, `https` and raw `net` servers).
+- A hard egress guard refuses outbound `net`/`tls`/`dgram` sockets, DNS
+  lookups, `child_process` spawns and `worker_threads` — instrumented and
+  *un*instrumented egress alike. Only the record store endpoint
+  (`pg:`/`http(s):` spec) stays reachable so the replay record can persist.
+- `db.query` never touches a database — recorded rowsets are returned in
+  order. `pool.connect()` returns a synthetic client.
 - `fetch` / `http.request` never egress — recorded responses (including
   recorded timeouts/resets) are synthesized.
 - `Math.random` / `crypto.randomUUID` replay the captured sequences; the clock
-  is shifted to the incident's wall time.
+  is shifted to the incident's wall time. Over-consumption falls back to a
+  deterministic PRNG *and* emits a `replay.note` divergence — never silently.
 - `recurr.auth()` returns the captured principal — production credentials are
-  never needed (they were redacted before storage anyway).
+  never needed (they were redacted before storage anyway). Environment
+  variables matching `key|secret|token|passw|credential|dsn|…` are stripped
+  from the child.
 
 The original request is injected over loopback HTTP, the replay produces its
-own Execution Record, and the diff engine reports where it diverged.
+own Execution Record, and the diff engine reports where it diverged —
+including nondeterminism usage drift, recorded calls the replay never made,
+and calls the replay made that were never recorded.
+
+Escape hatches (explicit, for constrained environments):
+`RECURR_REPLAY_ALLOW_NET=1` disables the egress guard;
+`RECURR_REPLAY_INHERIT_ENV=1` disables env sanitization.
 
 ### Diff
 
@@ -134,23 +149,45 @@ Or point the server at Postgres directly:
 ## Privacy & safety
 
 - Redaction runs **in the SDK before persistence** — denylist fields
-  (`authorization`, `cookie`, `password*`, `*token*`, `credit_card`, `ssn`, …),
-  case/underscore-insensitive, plus custom `fields` and explicit `paths`.
+  (`authorization`, `cookie`, `password*`, `*token*`, `credit_card`, `ssn`,
+  `session`, `csrf`, `jwt`, …), case/underscore-insensitive, plus custom
+  `fields` and explicit `paths`. Circular structures, `__proto__` keys and
+  URL userinfo (`user:pass@host`) are handled safely.
 - Auth replays use the captured *principal*, not the credential.
 - Replay processes bind loopback-only on ephemeral ports; instrumented egress
   (`fetch`, `http(s)`, `db`) is served from the record — no production systems
-  are touched.
+  are touched. A socket-level egress guard also refuses uninstrumented
+  outbound connections, DNS lookups, subprocesses and workers.
+- Sensitive env vars are not inherited by replay children.
+- Records imported via `recurr import` or posted to the collector are
+  schema-validated; unsafe ids can't traverse the filesystem store.
 
 ## Known limitations (MVP scope)
 
-- `import { request } from 'node:http'` snapshots the binding and escapes the
-  monkeypatch — `fetch` (recommended) or method-style `http.request(...)` are
-  intercepted.
+- Named ESM imports of builtins snapshot the binding and escape monkeypatching
+  (`import { request } from 'node:http'`, `import { randomUUID } from
+  'node:crypto'`). Default/namespace-style `import http from 'node:http'` and
+  `http.request(...)` are intercepted; `fetch` is recommended.
 - Request body capture relies on a body parser populating `req.body`
   (raw/stream bodies are not yet captured).
 - Replay DB fidelity is "recorded rowsets in order" — not a materialized
   database snapshot. Lookahead matching tolerates small structural drift and
   emits `replay.note` divergences.
+- Code executed inside a *fresh* `vm` realm gets unpatched globals — very
+  rare, but such code would bypass interception.
+- If the record store shares a host:port with a production dependency (e.g.
+  the same Postgres server is both store and app DB), the egress allowlist
+  can't distinguish them at socket level — keep them on separate endpoints.
+- An `http.out` event carrying `responsePending: true` means the app never
+  consumed the upstream response body — headers/status are recorded, the body
+  isn't (capture gap, surfaced honestly rather than shown as an empty body).
+- Clock-read counts (`seed.timeReads`) are reported as informational drift —
+  infrastructure-level `Date.now()` calls legitimately differ between live and
+  mocked dependencies and don't lower the match score.
+- `crypto.randomBytes` / `randomInt` / `randomFillSync` / `getRandomValues`
+  are not captured. At replay they draw deterministic bytes from the
+  record-seeded PRNG and emit a `replay.note` divergence rather than
+  silently producing real entropy.
 - Single-service replay; distributed multi-service replay is future work.
 
 ## Development

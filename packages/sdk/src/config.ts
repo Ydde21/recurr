@@ -8,6 +8,9 @@ export interface CaptureOptions {
   maxDbRows?: number;
   /** Capture db result rows (not just rowCount). Default true. */
   captureDbRows?: boolean;
+  /** Capture db query params. Object params are always key-redacted; set
+   *  'omit' to drop params entirely (weakens replay matching fidelity). */
+  dbParams?: 'capture' | 'omit';
   /** Capture outbound request/response bodies. Default true. */
   captureOutboundBodies?: boolean;
 }

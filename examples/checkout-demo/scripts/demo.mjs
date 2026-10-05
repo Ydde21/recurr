@@ -71,7 +71,7 @@ async function main() {
   for (let i = 0; i < 40 && !incidentId; i++) {
     const dir = path.join(storeDir, 'executions');
     const files = await fs.readdir(dir).catch(() => []);
-    incidentId = files.find((f) => f.startsWith('RUN-'))?.replace('.json', '');
+    incidentId = files.find((f) => f.startsWith('RUN-') && f.endsWith('.json'))?.replace('.json', '');
     if (!incidentId) await new Promise((r) => setTimeout(r, 250));
   }
   if (!incidentId) throw new Error('no incident captured');

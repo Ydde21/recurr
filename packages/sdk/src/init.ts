@@ -54,7 +54,19 @@ export async function init(config: RecurrConfig): Promise<Recurr> {
   }
   if (env.mode === 'replay') {
     if (!env.replayOf) throw new Error('[recurr] RECURR_MODE=replay requires RECURR_REPLAY_OF=<incident id>');
-    await setupReplay(state, env.replayOf);
+    try {
+      await setupReplay(state, env.replayOf);
+    } catch (err) {
+      // Give the orchestrator a structured failure before we throw.
+      if (typeof process.send === 'function') {
+        try {
+          process.send({ type: 'recurr:init-error', message: err instanceof Error ? err.message : String(err) });
+        } catch {
+          /* parent gone */
+        }
+      }
+      throw err;
+    }
   }
 
   return new RecurrHandle(state);

@@ -92,8 +92,8 @@ function errorName(err: unknown): string {
   return err instanceof Error ? err.name : 'Error';
 }
 
-function pushHttpOut(ctx: RuntimeCtx, data: HttpOutData, durationMs: number, ok: boolean): void {
-  pushEvent(ctx, 'http.out', {
+function pushHttpOut(ctx: RuntimeCtx, data: HttpOutData, durationMs: number, ok: boolean): TimelineEvent {
+  return pushEvent(ctx, 'http.out', {
     name: `${data.method} ${hostOf(data.url)}`,
     durationMs,
     status: ok ? 'ok' : 'error',
@@ -135,9 +135,11 @@ function patchFetch(): void {
 
     if (ctx.mode === 'replay') {
       const rec = nextRecordedHttpOut(ctx, method, redUrl);
+      const reqRed = requestBody !== undefined ? ctx.redactor.redactBody(requestBody, undefined, 'http.out.requestBody') : undefined;
+      if (reqRed) ctx.redactionHits.push(...reqRed.hits);
       const data: HttpOutData = rec
-        ? { ...rec, requestBody: requestBody ?? rec.requestBody }
-        : { method, url: redUrl, requestBody, errorKind: 'error', error: 'no recorded response' };
+        ? { ...rec, requestBody: reqRed?.value ?? rec.requestBody }
+        : { method, url: redUrl, requestBody: reqRed?.value, errorKind: 'error', error: 'no recorded response' };
       const ok = !!rec && !rec.error && !rec.errorKind;
       pushHttpOut(ctx, data, rec ? recLatency(ctx, data) : 0, ok);
       return synthesizeFetchResponse(rec, method, url);
@@ -147,26 +149,38 @@ function patchFetch(): void {
     try {
       const res = await origFetch(input, init);
       const durationMs = Math.round((performance.now() - t0) * 1000) / 1000;
-      let responseBody: string | undefined;
-      if (ctx.config.capture?.captureOutboundBodies !== false) {
-        try {
-          const raw = await res.clone().text();
-          const clipped = Buffer.byteLength(raw, 'utf8') > maxBody ? Buffer.from(raw, 'utf8').subarray(0, maxBody).toString('utf8') : raw;
-          const red = ctx.redactor.redactBody(clipped, res.headers.get('content-type') ?? undefined, 'http.out.responseBody');
-          ctx.redactionHits.push(...red.hits);
-          responseBody = red.value;
-        } catch {
-          responseBody = undefined;
-        }
-      }
+      const hdrRed = ctx.redactor.redactHeaders(Object.fromEntries(res.headers.entries()), 'http.out.responseHeaders');
+      ctx.redactionHits.push(...hdrRed.hits);
+      const data: HttpOutData = { method, url: redUrl, status: res.status, responseHeaders: hdrRed.value };
       const reqRed = requestBody !== undefined ? ctx.redactor.redactBody(requestBody, undefined, 'http.out.requestBody') : undefined;
-      if (reqRed) ctx.redactionHits.push(...reqRed.hits);
-      pushHttpOut(
-        ctx,
-        { method, url: redUrl, requestBody: reqRed?.value, status: res.status, responseBody },
-        durationMs,
-        true,
-      );
+      if (reqRed) {
+        ctx.redactionHits.push(...reqRed.hits);
+        data.requestBody = reqRed.value;
+      }
+      // Push now so event ordering reflects response arrival; the body is
+      // captured asynchronously so large/streamed bodies never delay the app.
+      pushHttpOut(ctx, data, durationMs, true);
+      if (ctx.config.capture?.captureOutboundBodies !== false) {
+        const ct = res.headers.get('content-type') ?? undefined;
+        const p = res
+          .clone()
+          .text()
+          .then((raw) => {
+            const clipped = Buffer.byteLength(raw, 'utf8') > maxBody ? Buffer.from(raw, 'utf8').subarray(0, maxBody).toString('utf8') : raw;
+            const red = ctx.redactor.redactBody(clipped, ct, 'http.out.responseBody');
+            ctx.redactionHits.push(...red.hits);
+            ctx.truncatedPaths.push(...red.truncated);
+            data.responseBody = red.value;
+            // Body may resolve after the response finished — re-save so the
+            // record isn't missing it.
+            if (ctx.closed) ctx.repersist?.();
+          })
+          .catch(() => {
+            data.responseBody = '[capture-failed]';
+            if (ctx.closed) ctx.repersist?.();
+          });
+        ctx.pending.push(p);
+      }
       return res;
     } catch (err) {
       const durationMs = Math.round((performance.now() - t0) * 1000) / 1000;
@@ -193,6 +207,31 @@ function recLatency(ctx: RuntimeCtx, _data: HttpOutData): number {
   return 0; // response arrives immediately; recorded duration kept on the event
 }
 
+/** Headers that must not be replayed into a synthesized response — the body
+ *  we stored is already decoded, and hop headers would be wrong anyway. */
+const DROP_RESPONSE_HEADERS = new Set([
+  'content-encoding',
+  'content-length',
+  'transfer-encoding',
+  'connection',
+  'keep-alive',
+  'date',
+]);
+
+function replayResponseHeaders(rec: HttpOutData | undefined): Headers {
+  const headers = new Headers();
+  if (rec?.responseHeaders) {
+    for (const [k, v] of Object.entries(rec.responseHeaders)) {
+      if (DROP_RESPONSE_HEADERS.has(k.toLowerCase())) continue;
+      headers.set(k, Array.isArray(v) ? v.join(', ') : v);
+    }
+  }
+  if (rec?.responseBody !== undefined && !headers.has('content-type')) {
+    headers.set('content-type', guessJson(rec.responseBody) ? 'application/json' : 'text/plain');
+  }
+  return headers;
+}
+
 function synthesizeFetchResponse(rec: HttpOutData | undefined, method: string, url: string): Promise<Response> {
   if (!rec) {
     return Promise.reject(new TypeError(`fetch failed (recurr replay: no recorded response for ${method} ${url})`));
@@ -209,11 +248,11 @@ function synthesizeFetchResponse(rec: HttpOutData | undefined, method: string, u
         return Promise.reject(new TypeError(rec.error ?? 'fetch failed'));
     }
   }
-  const headers = new Headers();
-  if (rec.responseBody !== undefined && !headers.has('content-type')) {
-    headers.set('content-type', guessJson(rec.responseBody) ? 'application/json' : 'text/plain');
-  }
-  return Promise.resolve(new Response(rec.responseBody ?? null, { status: rec.status ?? 200, headers }));
+  // 204/304 responses must not carry a body — Response() throws otherwise.
+  const bodiless = rec.status === 204 || rec.status === 304;
+  return Promise.resolve(
+    new Response(bodiless ? null : (rec.responseBody ?? null), { status: rec.status ?? 200, headers: replayResponseHeaders(rec) }),
+  );
 }
 
 function guessJson(body: string): boolean {
@@ -280,6 +319,29 @@ function patchRequestModule(mod: typeof http | typeof https, scheme: string): vo
     let reqBytes = 0;
 
     const wrappedCb = (res: http.IncomingMessage) => {
+      // Record at headers-arrival, not body end — a consumer that never reads
+      // the body (fire-and-forget) would otherwise produce NO event at all.
+      const cleanHeaders: Record<string, string | string[]> = {};
+      for (const [k, v] of Object.entries(res.headers)) {
+        if (v !== undefined) cleanHeaders[k] = v;
+      }
+      const hdrRed = ctx.redactor.redactHeaders(cleanHeaders, 'http.out.responseHeaders');
+      ctx.redactionHits.push(...hdrRed.hits);
+      const data: HttpOutData & { responsePending?: boolean } = {
+        method,
+        url: redUrl,
+        requestBody: reqBytes ? Buffer.concat(reqChunks).toString('utf8').slice(0, maxBody) : undefined,
+        status: res.statusCode,
+        responseHeaders: hdrRed.value,
+        responsePending: true,
+      };
+      const ev = pushHttpOut(ctx, data, Math.round((performance.now() - t0) * 1000) / 1000, true);
+      const settle = () => {
+        delete data.responsePending;
+        ev.durationMs = Math.round((performance.now() - t0) * 1000) / 1000;
+        if (ctx.closed) ctx.repersist?.();
+      };
+
       // Tee response body through a transform so the consumer sees a normal stream.
       const resChunks: Buffer[] = [];
       let resBytes = 0;
@@ -300,27 +362,34 @@ function patchRequestModule(mod: typeof http | typeof https, scheme: string): vo
       outMsg.headers = res.headers;
       outMsg.rawHeaders = res.rawHeaders;
       outMsg.httpVersion = res.httpVersion;
-      (outMsg as { socket?: unknown }).socket = res.socket;
+      const resAny = res as unknown as Record<string, unknown>;
+      for (const k of ['socket', 'complete', 'aborted', 'trailers', 'rawTrailers']) {
+        Object.defineProperty(outMsg, k, { get: () => resAny[k], configurable: true });
+      }
+      (outMsg as { setTimeout?: unknown }).setTimeout = res.setTimeout?.bind(res);
+      // Upstream failures must propagate to the consumer's stream or it hangs.
+      res.on('error', (err) => {
+        ev.status = 'error';
+        data.error = errorMessage(err);
+        data.errorName = errorName(err);
+        data.errorKind = classifyError(err);
+        settle();
+        out.destroy(err as Error);
+      });
+      res.on('aborted', () => {
+        ev.status = 'error';
+        data.error = 'response aborted';
+        data.errorName = 'Error';
+        data.errorKind = 'reset';
+        settle();
+        out.destroy(Object.assign(new Error('response aborted'), { code: 'ECONNRESET' }));
+      });
       res.on('end', () => {
-        const durationMs = Math.round((performance.now() - t0) * 1000) / 1000;
         const rawBody = Buffer.concat(resChunks).toString('utf8');
         const red = ctx.redactor.redactBody(rawBody, String(res.headers['content-type'] ?? ''), 'http.out.responseBody');
         ctx.redactionHits.push(...red.hits);
-        pushHttpOut(
-          ctx,
-          {
-            method,
-            url: redUrl,
-            requestBody: reqBytes ? Buffer.concat(reqChunks).toString('utf8').slice(0, maxBody) : undefined,
-            status: res.statusCode,
-            responseBody: red.value,
-          },
-          durationMs,
-          true,
-        );
-      });
-      res.on('error', (err) => {
-        pushHttpOut(ctx, { method, url: redUrl, error: errorMessage(err), errorName: errorName(err), errorKind: classifyError(err) }, performance.now() - t0, false);
+        data.responseBody = red.value;
+        settle();
       });
       cb?.(outMsg);
     };
@@ -370,14 +439,31 @@ class FakeIncomingMessage extends Readable {
   headers: Record<string, string | string[]> = {};
   rawHeaders: string[] = [];
   httpVersion = '1.1';
+  complete = true;
+  aborted = false;
+  trailers: Record<string, string> = {};
+  rawTrailers: string[] = [];
+  socket = null;
   private body: Buffer;
   private pushed = false;
+
+  setTimeout(): this {
+    return this;
+  }
 
   constructor(rec: HttpOutData) {
     super();
     this.statusCode = rec.status ?? 200;
     this.body = Buffer.from(rec.responseBody ?? '', 'utf8');
-    this.headers = {};
+    const hdrs: Record<string, string | string[]> = {};
+    for (const [k, v] of Object.entries(rec.responseHeaders ?? {})) {
+      if (!DROP_RESPONSE_HEADERS.has(k.toLowerCase())) hdrs[k] = v;
+    }
+    if (this.body.length && hdrs['content-type'] === undefined) {
+      hdrs['content-type'] = guessJson(this.body.toString('utf8')) ? 'application/json' : 'text/plain';
+    }
+    this.headers = hdrs;
+    this.rawHeaders = Object.entries(hdrs).flatMap(([k, v]) => (Array.isArray(v) ? v.flatMap((x) => [k, x]) : [k, v]));
   }
 
   override _read(): void {
@@ -393,15 +479,29 @@ class FakeClientRequest extends EventEmitter {
   private headerMap = new Map<string, string>();
   private finished = false;
   aborted = false;
+  readonly path: string;
+  readonly protocol: string;
+  readonly host: string;
+  reusedSocket = false;
 
   constructor(
     private readonly ctx: RuntimeCtx,
     private readonly rec: HttpOutData | undefined,
-    private readonly method: string,
+    readonly method: string,
     private readonly url: string,
     private readonly cb?: (res: http.IncomingMessage) => void,
   ) {
     super();
+    try {
+      const u = new URL(url);
+      this.path = u.pathname + u.search;
+      this.protocol = u.protocol;
+      this.host = u.host;
+    } catch {
+      this.path = url;
+      this.protocol = 'http:';
+      this.host = '';
+    }
   }
 
   write(chunk: unknown): boolean {
@@ -443,6 +543,16 @@ class FakeClientRequest extends EventEmitter {
   setTimeout(): this {
     return this;
   }
+  setNoDelay(): this {
+    return this;
+  }
+  setSocketKeepAlive(): this {
+    return this;
+  }
+  flushHeaders(): void {}
+  get writableEnded(): boolean {
+    return this.finished;
+  }
   abort(): void {
     this.aborted = true;
   }
@@ -453,7 +563,10 @@ class FakeClientRequest extends EventEmitter {
 
   private respond(): void {
     const rec = this.rec;
-    const requestBody = this.chunks.length ? Buffer.concat(this.chunks).toString('utf8') : undefined;
+    const rawBody = this.chunks.length ? Buffer.concat(this.chunks).toString('utf8') : undefined;
+    const rb = rawBody !== undefined ? this.ctx.redactor.redactBody(rawBody, undefined, 'http.out.requestBody') : undefined;
+    if (rb) this.ctx.redactionHits.push(...rb.hits);
+    const requestBody = rb?.value;
     if (!rec) {
       pushHttpOut(this.ctx, { method: this.method, url: this.url, requestBody, error: 'no recorded response', errorKind: 'error' }, 0, false);
       this.emit('error', new TypeError(`recurr replay: no recorded response for ${this.method} ${this.url}`));

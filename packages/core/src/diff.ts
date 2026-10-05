@@ -15,10 +15,15 @@ export type DivergenceType =
   | 'field-mismatch'
   | 'response-status'
   | 'response-body'
-  | 'error';
+  | 'error'
+  | 'seed-usage';
 
 export interface Divergence {
   type: DivergenceType;
+  /** 'info' divergences are reported but don't lower the match score — e.g.
+   *  infra-level clock reads that legitimately differ between a live capture
+   *  and a replay with mocked dependencies. */
+  severity?: 'info';
   /** Original-side seq when applicable. */
   seq?: number;
   kind?: string;
@@ -239,12 +244,40 @@ export function diffExecutions(original: ExecutionRecord, replay: ExecutionRecor
     push({ type: 'error', expected: summarizeError(oe), actual: summarizeError(re), message: `error ${summarizeError(oe) ?? 'none'} → ${summarizeError(re) ?? 'none'}` });
   }
 
+  // Nondeterminism usage — under/over-consumption means the replay's code
+  // path diverged from the original even if events happened to align.
+  const seedDiffs: Array<[string, number, number, boolean]> = [
+    ['random', original.seed.random.length, replay.seed.randomConsumed ?? replay.seed.random.length, false],
+    ['uuid', original.seed.uuids.length, replay.seed.uuidConsumed ?? replay.seed.uuids.length, false],
+    // Clock-read counts differ legitimately between live deps and mocked deps —
+    // reported for visibility but not scored.
+    ['clock-reads', original.seed.timeReads ?? -1, replay.seed.timeReads ?? -1, true],
+  ];
+  for (const [label, expected, actual, info] of seedDiffs) {
+    if (expected >= 0 && actual >= 0 && expected !== actual) {
+      push({
+        type: 'seed-usage',
+        severity: info ? 'info' : undefined,
+        path: `seed.${label}`,
+        expected,
+        actual,
+        message: `${label} consumed ${actual} — original captured ${expected}`,
+      });
+    }
+  }
+
   // Enforce the divergence cap after all comparisons.
   if (divergences.length > maxDivergences) divergences.length = maxDivergences;
 
+  // Seed/nondeterminism divergences weigh against the score just like event
+  // mismatches — a replay that consumed a different amount of nondeterminism
+  // took a different code path and must not score as a clean match.
+  // Score = clean aligned fraction of max(|a|,|b|); an empty-vs-empty record
+  // pair with no divergences is a genuine 100.
+  const seedDivergences = divergences.filter((d) => d.type === 'seed-usage' && d.severity !== 'info').length;
   const total = Math.max(a.length, b.length, 1);
-  const clean = matched - mismatchSeqs.size;
-  const matchScore = Math.max(0, Math.round((clean / total) * 100));
+  const clean = total - missing - extra - mismatchSeqs.size - seedDivergences;
+  const matchScore = Math.max(0, Math.min(100, Math.round((clean / total) * 100)));
 
   const originalMs = original.response?.durationMs ?? lastOffset(original);
   const replayMs = replay.response?.durationMs ?? lastOffset(replay);

@@ -65,6 +65,23 @@ describe('FileStore', () => {
     expect(await store.get('RUN-NOPE1')).toBeNull();
   });
 
+  it('rejects path-traversal record ids', async () => {
+    const store = await tmpStore();
+    await expect(store.save(rec('../escape'))).rejects.toThrow(/invalid record id/);
+    await expect(store.get('../../secret')).rejects.toThrow(/invalid record id/);
+    await expect(
+      store.saveRegression({ id: '../reg', incidentId: 'RUN-X', name: 'x', createdAt: new Date().toISOString() }),
+    ).rejects.toThrow(/invalid record id/);
+  });
+
+  it('reports corrupt record files clearly', async () => {
+    const store = await tmpStore();
+    await store.save(rec('RUN-CORRUPT'));
+    const dir = path.join((store as unknown as { dir: string }).dir, 'executions');
+    await (await import('node:fs/promises')).writeFile(path.join(dir, 'RUN-CORRUPT.json'), '{broken!!');
+    await expect(store.get('RUN-CORRUPT')).rejects.toThrow(/corrupt/);
+  });
+
   it('openStore resolves fs: specs', async () => {
     const dir = await mkdtemp(path.join(tmpdir(), 'recurr-spec-'));
     dirs.push(dir);

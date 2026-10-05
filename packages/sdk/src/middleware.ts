@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
-import { als, pushEvent } from './context.js';
+import { als, pushEvent, type RuntimeCtx } from './context.js';
 
 /** Normalize IPv4-mapped IPv6 addresses so capture/replay agree. */
 function normalizeAddr(addr: string | undefined): string | undefined {
@@ -17,6 +17,12 @@ import { buildRecord, extractRequest, makeCtx, persist, recordError, shouldPersi
 export function createMiddleware(state: RecurrState) {
   return function recurrMiddleware(req: Request, res: Response, next: NextFunction): void {
     if (state.mode === 'off') {
+      next();
+      return;
+    }
+    // Mounted twice (app.use + router.use, or duplicate calls)? One ctx wins —
+    // a second record for the same request would be noise, not signal.
+    if ((req as unknown as Record<symbol, unknown>)[CTX_KEY]) {
       next();
       return;
     }
@@ -60,14 +66,49 @@ export function createMiddleware(state: RecurrState) {
         next(err as never);
       };
 
-      res.on('finish', () => {
+      let repersistTimer: NodeJS.Timeout | undefined;
+      let repersistCount = 0;
+      const finalize = (aborted: boolean) => {
+        if (ctx.closed) return;
+        ctx.aborted = aborted || undefined;
+        if (aborted) {
+          pushEvent(ctx, 'log', { name: 'response.aborted', status: 'error', data: { message: 'connection closed before response finished' } });
+        }
         const ct = String(res.getHeader('content-type') ?? '');
-        const isTextual = !ct || /json|text|xml|urlencoded|javascript|html/.test(ct);
+        const ce = String(res.getHeader('content-encoding') ?? '');
+        const encoded = ce !== '' && ce !== 'identity';
+        const isTextual = !encoded && (!ct || /json|text|xml|urlencoded|javascript|html/.test(ct));
         const rawBody = chunks.length ? Buffer.concat(chunks) : undefined;
         const bodyStr = rawBody === undefined ? undefined : isTextual ? rawBody.toString('utf8') : rawBody.toString('base64');
         const bodyB64 = rawBody !== undefined && !isTextual;
-        const record = buildRecord(ctx, state, req as RequestLike, res, bodyStr, bodyB64);
-        if (shouldPersist(ctx, state, res.statusCode)) persist(ctx, state, record);
+
+        // Async captures (cloned fetch bodies) must land before we serialize.
+        void Promise.allSettled([...ctx.pending]).then(() => {
+          const record = buildRecord(ctx, state, req as RequestLike, res, bodyStr, bodyB64);
+          const saved = shouldPersist(ctx, state, res.statusCode) || aborted;
+          if (saved) persist(ctx, state, record);
+          ctx.closed = true;
+          // Fire-and-forget work may still push events after finish — re-save
+          // (bounded) so the timeline stays honest instead of dropping them.
+          if (saved) {
+            ctx.repersist = () => {
+              if (repersistCount >= 20 || repersistTimer) return;
+              repersistTimer = setTimeout(() => {
+                repersistTimer = undefined;
+                repersistCount++;
+                persist(ctx, state, buildRecord(ctx, state, req as RequestLike, res, bodyStr, bodyB64));
+              }, 25);
+              repersistTimer.unref?.();
+            };
+          }
+        });
+      };
+
+      res.on('finish', () => finalize(false));
+      // 'close' without 'finish' = client disconnected mid-flight; still capture
+      // the partial record — an aborted request is an incident worth seeing.
+      res.on('close', () => {
+        if (!ctx.closed && !res.writableFinished) finalize(true);
       });
 
       innerNext();
@@ -84,7 +125,7 @@ export function createMiddleware(state: RecurrState) {
  */
 export function createErrorMiddleware(state: RecurrState) {
   return function recurrErrorMiddleware(err: unknown, req: Request, _res: Response, next: NextFunction): void {
-    const ctx = als.getStore() ?? (req as unknown as Record<symbol, import('./context.js').RuntimeCtx | undefined>)[CTX_KEY];
+    const ctx = als.getStore() ?? (req as unknown as Record<symbol, RuntimeCtx | undefined>)[CTX_KEY];
     if (ctx) recordError(ctx, err);
     next(err);
   };

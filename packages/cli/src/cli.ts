@@ -2,7 +2,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { Command } from 'commander';
-import { diffExecutions, type ExecutionRecord, type RegressionScenario } from '@recurr/core';
+import { diffExecutions, validateRecord, type RegressionScenario } from '@recurr/core';
 import { replayIncident, ReplayError } from '@recurr/replay';
 import { CONFIG_DIR, CONFIG_FILE, loadConfig, resolveStore } from './config.js';
 import { bold, cyan, dim, fmtTime, gray, green, INCIDENT_HEADERS, incidentRow, printDiffReport, printRecord, red, table, yellow } from './format.js';
@@ -19,6 +19,16 @@ program
 
 function storeOpt(cmd: Command): string | undefined {
   return (cmd.optsWithGlobals() as { store?: string }).store;
+}
+
+/** Parse a numeric CLI option; undefined default-safe. Throws on garbage. */
+function numOpt(raw: string | undefined, name: string): number | undefined {
+  if (raw === undefined) return undefined;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) {
+    throw new Error(`${name} must be a positive number, got "${raw}"`);
+  }
+  return n;
 }
 
 // ---------------------------------------------------------------------------
@@ -54,7 +64,7 @@ program
   .action(async (opts: { service?: string; limit: string; json?: boolean }, cmd: Command) => {
     const { store } = await resolveStore(storeOpt(cmd));
     try {
-      const list = await store.list({ kind: 'incident', service: opts.service, limit: Number(opts.limit) });
+      const list = await store.list({ kind: 'incident', service: opts.service, limit: numOpt(opts.limit, '--limit') });
       if (opts.json) {
         out(JSON.stringify(list, null, 2));
         return;
@@ -89,6 +99,9 @@ program
         return;
       }
       printRecord(rec, out);
+      const seedBits = [`random×${rec.seed.random.length}`, `uuid×${rec.seed.uuids.length}`];
+      if (rec.seed.timeReads !== undefined) seedBits.push(`clockReads×${rec.seed.timeReads}`);
+      out(`${dim('seed')}         ${seedBits.join(' · ')}${rec.seed.randomConsumed !== undefined ? dim(`  (replay consumed ${rec.seed.randomConsumed} randoms)`) : ''}`);
       const replays = rec.kind === 'incident' ? await store.listReplays(rec.id) : [];
       if (replays.length) {
         out('');
@@ -120,8 +133,8 @@ program
         storeSpec: spec,
         incidentId: id,
         target: { command: opts.target, cwd: opts.cwd },
-        timeoutMs: Number(opts.timeout),
-        readyTimeoutMs: Number(opts.readyTimeout),
+        timeoutMs: numOpt(opts.timeout, '--timeout'),
+        readyTimeoutMs: numOpt(opts.readyTimeout, '--ready-timeout'),
         onProgress: opts.json ? undefined : (m) => errOut(dim(m)),
       });
       if (opts.json) {
@@ -162,6 +175,9 @@ program
         errOut(red(`no record ${replayId}`));
         process.exitCode = 1;
         return;
+      }
+      if (incident.kind === 'replay') {
+        errOut(yellow(`warning: ${incidentId} is a replay record — did you mean to swap the arguments?`));
       }
       const report = diffExecutions(incident, replay);
       if (opts.json) {
@@ -209,14 +225,22 @@ program
   .action(async (file: string, _opts: unknown, cmd: Command) => {
     const { store } = await resolveStore(storeOpt(cmd));
     try {
-      const rec = JSON.parse(await fs.readFile(file, 'utf8')) as ExecutionRecord;
-      if (!rec?.id) {
-        errOut(red('not a recurr record'));
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+      } catch (e) {
+        errOut(red(`cannot read ${file}: ${e instanceof Error ? e.message : String(e)}`));
         process.exitCode = 1;
         return;
       }
-      await store.save(rec);
-      out(`${green('✓')} imported ${rec.id}`);
+      const v = validateRecord(parsed);
+      if (!v.ok) {
+        errOut(red(`not a valid recurr record: ${v.error}`));
+        process.exitCode = 1;
+        return;
+      }
+      await store.save(v.record);
+      out(`${green('✓')} imported ${v.record.id}`);
     } finally {
       await store.close();
     }
@@ -240,10 +264,12 @@ regression
         process.exitCode = 1;
         return;
       }
+      const incidentRef = rec.kind === 'replay' && rec.replayOf ? rec.replayOf : rec.id;
+      if (incidentRef !== rec.id) errOut(dim(`note: ${rec.id} is a replay — scenario points at ${incidentRef}`));
       const scenario: RegressionScenario = {
-        id: `REG-${incidentId.replace(/^RUN-/, '')}`,
+        id: `REG-${incidentRef.replace(/^RUN-/, '')}`,
         name: opts.name,
-        incidentId: rec.id,
+        incidentId: incidentRef,
         createdAt: new Date().toISOString(),
         expectedBugStatus: rec.response?.status,
         notes: opts.notes,
@@ -299,7 +325,7 @@ regression
         storeSpec: spec,
         incidentId: scenario.incidentId,
         target: { command: opts.target, cwd: opts.cwd },
-        timeoutMs: Number(opts.timeout),
+        timeoutMs: numOpt(opts.timeout, '--timeout'),
         onProgress: (m) => errOut(dim(m)),
       });
       printDiffReport(result.report, out);

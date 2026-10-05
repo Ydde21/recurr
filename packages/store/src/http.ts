@@ -10,7 +10,7 @@ export class HttpStore implements IncidentStore {
   }
 
   private async req(path: string, init?: RequestInit): Promise<Response> {
-    const res = await fetch(this.url(path), init);
+    const res = await fetch(this.url(path), { ...init, signal: AbortSignal.timeout(15_000) });
     if (!res.ok) {
       const body = await res.text().catch(() => '');
       throw new Error(`recurr server ${res.status} ${path}: ${body.slice(0, 200)}`);
@@ -27,7 +27,7 @@ export class HttpStore implements IncidentStore {
   }
 
   async get(id: string): Promise<ExecutionRecord | null> {
-    const res = await fetch(this.url(`/v1/executions/${encodeURIComponent(id)}`));
+    const res = await fetch(this.url(`/v1/executions/${encodeURIComponent(id)}`), { signal: AbortSignal.timeout(15_000) });
     if (res.status === 404) return null;
     if (!res.ok) throw new Error(`recurr server ${res.status}`);
     return (await res.json()) as ExecutionRecord;

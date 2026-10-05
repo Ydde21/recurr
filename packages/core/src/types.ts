@@ -63,6 +63,16 @@ export interface ExecutionSeed {
   /** Stable seed derived from the record id; powers PRNG fallback when a
    *  replay consumes more values than were captured. */
   prngSeed: number;
+  /**
+   * Replay records only: how many Math.random() calls the replay consumed.
+   * Compared against the original's `random.length` by the diff engine —
+   * a mismatch means the replay's code path diverged.
+   */
+  randomConsumed?: number;
+  /** Replay records only: crypto.randomUUID() calls consumed. */
+  uuidConsumed?: number;
+  /** Clock reads (Date.now / new Date) made inside the capture context. */
+  timeReads?: number;
 }
 
 /**
@@ -119,6 +129,12 @@ export interface HttpOutData {
   requestBody?: string;
   status?: number;
   responseBody?: string;
+  /** Response headers (redacted) — needed to synthesize faithful replays. */
+  responseHeaders?: Record<string, string | string[]>;
+  /** True when the response headers arrived but the body was never consumed
+   *  before the record closed (fire-and-forget callers) — the absent body is
+   *  a capture gap, not an empty body. */
+  responsePending?: boolean;
   error?: string;
   errorName?: string;
   /** 'timeout' | 'reset' | 'error' for failed calls. */

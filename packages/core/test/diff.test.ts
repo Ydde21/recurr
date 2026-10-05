@@ -95,4 +95,24 @@ describe('diffExecutions', () => {
     expect(report.timing.originalMs).toBe(8400);
     expect(report.timing.replayMs).toBe(42);
   });
+
+  it('flags seed under/over-consumption — a diverged code path is not a match', () => {
+    const withSeed = {
+      ...base,
+      seed: { startedAtWallMs: 0, random: [0.1, 0.2, 0.3], uuids: ['u1'], prngSeed: 1, timeReads: 4 },
+    };
+    const replay = record({
+      ...withSeed,
+      id: 'RPL-00006',
+      kind: 'replay',
+      replayOf: base.id,
+      seed: { startedAtWallMs: 0, random: [0.1], uuids: [], prngSeed: 1, randomConsumed: 1, uuidConsumed: 0, timeReads: 9 },
+    });
+    const report = diffExecutions(withSeed, replay);
+    const seedDiffs = report.divergences.filter((d) => d.type === 'seed-usage');
+    expect(seedDiffs.some((d) => d.path === 'seed.random')).toBe(true);
+    expect(seedDiffs.some((d) => d.path === 'seed.uuid')).toBe(true);
+    expect(seedDiffs.some((d) => d.path === 'seed.clock-reads')).toBe(true);
+    expect(report.matchScore).toBeLessThan(100);
+  });
 });

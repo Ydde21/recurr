@@ -84,6 +84,12 @@ const SENSITIVE_SUBSTRINGS: readonly string[] = [
   'cardnumber',
   'cvv',
   'privatekey',
+  // session/csrf/jwt as substrings catch compound header names like
+  // x-session-id / x-csrf-token / x-jwt that a strict exact list misses.
+  'session',
+  'csrf',
+  'xsrf',
+  'jwt',
 ];
 
 export class Redactor {
@@ -120,15 +126,15 @@ export class Redactor {
     return this.paths.some((p) => p === path || path.startsWith(p + '.') || path.startsWith(p + '['));
   }
 
-  /** Deep-redact an arbitrary JSON-ish value. */
+  /** Deep-redact an arbitrary JSON-ish value. Cycle-safe. */
   redactValue<T>(value: T, basePath = ''): RedactionResult<T> {
     const hits: string[] = [];
     const truncated: string[] = [];
-    const out = this.walk(value, basePath, 0, hits, truncated);
+    const out = this.walk(value, basePath, 0, hits, truncated, new WeakSet());
     return { value: out as T, hits, truncated };
   }
 
-  private walk(value: unknown, path: string, depth: number, hits: string[], truncated: string[]): unknown {
+  private walk(value: unknown, path: string, depth: number, hits: string[], truncated: string[], seen: WeakSet<object>): unknown {
     if (value === null || value === undefined) return value;
     if (this.pathIsTargeted(path)) {
       hits.push(path);
@@ -146,6 +152,11 @@ export class Redactor {
       truncated.push(path);
       return '[MAX_DEPTH]';
     }
+    if (seen.has(value)) {
+      truncated.push(path);
+      return '[CIRCULAR]';
+    }
+    seen.add(value);
     if (Buffer.isBuffer(value) || value instanceof Uint8Array) {
       const b = Buffer.isBuffer(value) ? value : Buffer.from(value);
       const clipped = b.length > this.maxBodyBytes;
@@ -153,17 +164,21 @@ export class Redactor {
       return { $base64: (clipped ? b.subarray(0, this.maxBodyBytes) : b).toString('base64') };
     }
     if (Array.isArray(value)) {
-      return value.map((v, i) => this.walk(v, `${path}[${i}]`, depth + 1, hits, truncated));
+      return value.map((v, i) => this.walk(v, `${path}[${i}]`, depth + 1, hits, truncated, seen));
     }
     const obj = value as Record<string, unknown>;
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(obj)) {
       const childPath = path ? `${path}.${k}` : k;
-      if (this.isSensitiveKey(k) || this.pathIsTargeted(childPath)) {
-        hits.push(childPath);
-        out[k] = this.placeholder;
+      const childVal =
+        this.isSensitiveKey(k) || this.pathIsTargeted(childPath)
+          ? (hits.push(childPath), this.placeholder)
+          : this.walk(v, childPath, depth + 1, hits, truncated, seen);
+      // `out['__proto__'] = x` would mutate the prototype, not set a key.
+      if (k === '__proto__') {
+        Object.defineProperty(out, k, { value: childVal, enumerable: true, writable: true, configurable: true });
       } else {
-        out[k] = this.walk(v, childPath, depth + 1, hits, truncated);
+        out[k] = childVal;
       }
     }
     return out;
@@ -235,6 +250,11 @@ export class Redactor {
     try {
       const u = new URL(url, 'http://recurr.local');
       let touched = false;
+      if (u.password) {
+        u.password = this.placeholder;
+        hits.push('url.userinfo.password');
+        touched = true;
+      }
       for (const key of [...u.searchParams.keys()]) {
         if (this.isSensitiveKey(key)) {
           u.searchParams.set(key, this.placeholder);
@@ -243,8 +263,10 @@ export class Redactor {
         }
       }
       if (!touched) return { value: url, hits };
-      // Preserve relative form if input was relative.
-      const serialized = url.startsWith('http') ? u.toString() : u.pathname + u.search + u.hash;
+      // Preserve relative form if input was relative. Check for a real scheme
+      // (has '://') rather than a lowercase 'http' prefix — 'HTTP://' and other
+      // schemes must keep their host.
+      const serialized = url.includes('://') ? u.toString() : u.pathname + u.search + u.hash;
       return { value: serialized, hits };
     } catch {
       return { value: url, hits };

@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { FileStore } from '@recurr/store';
-import { replayIncident } from '../src/replay.js';
+import { replayIncident, ReplayError, sanitizeEnv } from '../src/replay.js';
 
 /**
  * End-to-end: real checkout-api process (pg-mem db, fetch payment call)
@@ -70,7 +70,7 @@ beforeAll(async () => {
   const dir = path.join(tmp, 'store', 'executions');
   for (let i = 0; i < 40 && !incidentId; i++) {
     const files = await readdir(dir).catch(() => [] as string[]);
-    incidentId = files.find((f) => f.startsWith('RUN-'))?.replace('.json', '') ?? '';
+    incidentId = files.find((f) => f.startsWith('RUN-') && f.endsWith('.json'))?.replace('.json', '') ?? '';
     if (!incidentId) await new Promise((r) => setTimeout(r, 250));
   }
   expect(incidentId).toMatch(/^RUN-/);
@@ -170,4 +170,66 @@ describe('e2e capture → replay → diff', () => {
     expect(report.statusChanged).toBe(true);
     expect(report.divergences.some((d) => d.type === 'response-status')).toBe(true);
   }, 60_000);
+
+  it('strips sensitive env vars from the replay child', () => {
+    const env = sanitizeEnv({
+      PATH: '/usr/bin',
+      AWS_SECRET_ACCESS_KEY: 'sekret',
+      DATABASE_URL: 'postgres://prod',
+      NPM_TOKEN: 'tok',
+      PAYMENT_API_KEY: 'key',
+      PGSSLROOTCERT: '/cert',
+      NODE_ENV: 'development',
+    } as NodeJS.ProcessEnv);
+    expect(env.PATH).toBe('/usr/bin');
+    expect(env.NODE_ENV).toBe('development');
+    expect(env.AWS_SECRET_ACCESS_KEY).toBeUndefined();
+    expect(env.DATABASE_URL).toBeUndefined();
+    expect(env.NPM_TOKEN).toBeUndefined();
+    expect(env.PAYMENT_API_KEY).toBeUndefined();
+    expect(env.PGSSLROOTCERT).toBeUndefined();
+  });
+
+  it('fails fast when the target crashes during startup', async () => {
+    const t0 = Date.now();
+    await expect(
+      replayIncident({
+        store,
+        storeSpec,
+        incidentId,
+        target: { command: 'node -e process.exit(1)', cwd: demoDir },
+        timeoutMs: 30_000,
+        readyTimeoutMs: 30_000,
+      }),
+    ).rejects.toMatchObject({ name: 'ReplayError', code: 'TARGET_EXIT' });
+    // Should fail in well under the ready timeout — not hang.
+    expect(Date.now() - t0).toBeLessThan(15_000);
+  }, 45_000);
+
+  it('fails clearly when the target command does not exist', async () => {
+    await expect(
+      replayIncident({
+        store,
+        storeSpec,
+        incidentId,
+        target: { command: 'recurr-definitely-not-a-real-binary-xyz serve', cwd: demoDir },
+        timeoutMs: 30_000,
+      }),
+    ).rejects.toMatchObject({ name: 'ReplayError', code: 'TARGET_EXIT' });
+  }, 45_000);
+
+  it('rejects malformed timeouts', async () => {
+    await expect(
+      replayIncident({
+        store,
+        storeSpec,
+        incidentId,
+        target: { command: 'node dist/index.js', cwd: demoDir },
+        timeoutMs: Number.NaN,
+      }),
+    ).rejects.toMatchObject({ code: 'BAD_ARGS' });
+    await expect(
+      replayIncident({ store, storeSpec, incidentId, target: { command: '', cwd: demoDir } }),
+    ).rejects.toBeInstanceOf(ReplayError);
+  });
 });
