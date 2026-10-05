@@ -1,0 +1,26 @@
+{
+  "name": "@recurr/ui",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Recurr developer UI — incident inspection, replay, and diff workspace",
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit -p tsconfig.json && vite build",
+    "test": "vitest run --passWithNoTests",
+    "dev": "vite"
+  },
+  "dependencies": {
+    "@recurr/core": "workspace:*",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.30.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.4.1",
+    "typescript": "^5.7.2",
+    "vite": "^6.3.5",
+    "vitest": "^2.1.8"
+  }
+}

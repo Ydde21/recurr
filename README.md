@@ -133,8 +133,30 @@ Store resolution: `--store` flag → `RECURR_STORE` env → `.recurr/config.json
 | `@recurr/store` | `FileStore`, `PgStore` (migrations in `packages/store/migrations`), `HttpStore` |
 | `@recurr/replay` | Replay orchestrator — spawn, inject, collect, diff |
 | `@recurr/server` | Collector + query API (`recurr-server`) |
+| `@recurr/ui` | Developer UI — incident inspection, replay launch, diff workspace |
 | `recurr` | CLI |
 | `examples/checkout-demo` | End-to-end demo app |
+
+## Developer UI
+
+`pnpm build` produces `packages/ui/dist`, which `recurr-server` serves
+automatically at `/` (override with `RECURR_UI_DIR`). The API works standalone
+regardless — the UI is optional.
+
+The UI exposes the debugging workflow end-to-end: incident list (search /
+service / env / status filters, sortable columns) → incident workspace
+(request, response, error, auth principal, seed, redaction report) →
+virtualized execution timeline with a per-event inspector and a derived
+dependency graph → replay dialog → original-vs-replay diff (divergence list,
+synchronized side-by-side timelines, body diff) → regression scenarios
+(save from an incident, run against a target build, reports whether the bug
+still reproduces).
+
+Replays triggered from the UI run through the same orchestrator as the CLI —
+same isolation, same diff engine (`POST /v1/incidents/:id/replays`,
+`POST /v1/regressions/:id/run`). Both endpoints need a resolvable store spec
+on the server (`RECURR_STORE`/`DATABASE_URL`/`fs:` path) and return 501
+without one.
 
 ## Self-hosting
 

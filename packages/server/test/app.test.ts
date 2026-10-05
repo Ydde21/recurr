@@ -103,6 +103,70 @@ describe('collector API', () => {
   });
 });
 
+describe('replay endpoints', () => {
+  let specUrl: string;
+  let specServer: import('node:http').Server;
+
+  beforeAll(async () => {
+    // A storeSpec makes replay endpoints reachable; validation failures return
+    // before any child is spawned, so a bogus spec is safe here.
+    const app = createApp(new FileStore(tmp), { storeSpec: `file://${tmp}` });
+    await new Promise<void>((resolve) => {
+      specServer = app.listen(0, '127.0.0.1', resolve);
+    });
+    const addr = specServer.address();
+    specUrl = `http://127.0.0.1:${typeof addr === 'object' && addr ? addr.port : 0}`;
+  });
+
+  afterAll(() => {
+    specServer?.closeAllConnections?.();
+    specServer?.close();
+  });
+
+  it('reports healthz metadata', async () => {
+    const res = await fetch(`${specUrl}/healthz`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.schemaVersion).toBe(1);
+    expect(body.store).toBe(`file://${tmp}`);
+  });
+
+  it('501s replay when the server has no resolvable store spec', async () => {
+    const res = await fetch(`${baseUrl}/v1/incidents/RUN-SRV001/replays`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ command: 'node x.js' }),
+    });
+    expect(res.status).toBe(501);
+    const reg = await fetch(`${baseUrl}/v1/regressions/REG-SRV1/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ command: 'node x.js' }),
+    });
+    expect(reg.status).toBe(501);
+  });
+
+  it('rejects invalid replay request bodies with 400', async () => {
+    for (const bad of [{}, { command: '' }, { command: 'x', timeoutMs: 5 }, { command: 'x', env: { k: 1 } }]) {
+      const res = await fetch(`${specUrl}/v1/incidents/RUN-SRV001/replays`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(bad),
+      });
+      expect(res.status).toBe(400);
+    }
+  });
+
+  it('404s a regression run for an unknown scenario', async () => {
+    const res = await fetch(`${specUrl}/v1/regressions/REG-NOPE/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ command: 'node x.js' }),
+    });
+    expect(res.status).toBe(404);
+  });
+});
+
 describe('HttpStore', () => {
   it('round-trips records against the live server', async () => {
     const hs = new HttpStore(baseUrl);

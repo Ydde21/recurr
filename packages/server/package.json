@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@recurr/core": "workspace:*",
+    "@recurr/replay": "workspace:*",
     "@recurr/store": "workspace:*",
     "express": "^4.21.2"
   },

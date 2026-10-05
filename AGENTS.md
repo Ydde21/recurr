@@ -11,6 +11,9 @@ NodeNext). Name is "Recurr" — packages `@recurr/*`, CLI binary `recurr`.
   because the e2e spawns the compiled demo (`examples/checkout-demo/dist`).
 - `pnpm demo` (root) or `node scripts/demo.mjs` in `examples/checkout-demo` —
   full scripted capture→replay→diff→fix-verification walkthrough.
+- `packages/ui` — React+Vite developer UI; `pnpm --filter @recurr/ui dev` for
+  local dev (proxies `/v1`+`/healthz` to :4780). `recurr-server` serves
+  `packages/ui/dist` at `/` when built (`RECURR_UI_DIR` overrides).
 
 ## Architecture invariants
 
