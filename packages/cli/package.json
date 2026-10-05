@@ -1,0 +1,26 @@
+{
+  "name": "recurr",
+  "version": "0.1.0",
+  "description": "Recurr CLI — inspect, replay, diff and regression-test production incidents",
+  "type": "module",
+  "bin": {
+    "recurr": "dist/cli.js"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "dev": "tsc -p tsconfig.json --watch"
+  },
+  "dependencies": {
+    "@recurr/core": "workspace:*",
+    "@recurr/replay": "workspace:*",
+    "@recurr/store": "workspace:*",
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

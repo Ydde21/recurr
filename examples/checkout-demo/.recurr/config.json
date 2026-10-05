@@ -1,0 +1,4 @@
+{
+  "service": "checkout-api",
+  "store": "fs:/Users/eddycasas/Projects/Recurr/examples/checkout-demo/.recurr/store"
+}

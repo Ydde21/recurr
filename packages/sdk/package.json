@@ -1,0 +1,30 @@
+{
+  "name": "@recurr/sdk",
+  "version": "0.1.0",
+  "description": "Recurr capture & replay SDK for Node.js — records incident execution context and replays it safely",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "dev": "tsc -p tsconfig.json --watch"
+  },
+  "dependencies": {
+    "@recurr/core": "workspace:*",
+    "@recurr/store": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.2",
+    "@types/pg": "^8.11.10",
+    "express": "^4.21.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
