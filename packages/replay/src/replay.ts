@@ -213,6 +213,10 @@ export async function replayIncident(opts: ReplayOptions): Promise<ReplayResult>
       RECURR_MODE: 'replay',
       RECURR_REPLAY_OF: original.id,
       RECURR_STORE: opts.storeSpec,
+      // The store's bearer token is recurr-owned, not a production credential —
+      // sanitizeEnv would strip it (*TOKEN*) and an authenticated collector
+      // would 401 the child's save.
+      ...(process.env.RECURR_TOKEN ? { RECURR_TOKEN: process.env.RECURR_TOKEN } : {}),
       NODE_ENV: 'replay',
     },
     stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
