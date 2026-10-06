@@ -14,8 +14,9 @@ const loadList = (): string[] =>
 
 // Baseline — runs at module eval. index.ts imports this module FIRST, so by
 // this point the process's whole static import graph (ours AND the host's)
-// has already linked: presence of a builtin here can't be attributed. But
-// 'cluster' is never in our graph, so its presence is always host-owned.
+// has already linked: presence of a builtin here can't be attributed. But a
+// builtin that appears in loadList() AFTER this snapshot is unambiguously a
+// post-init load (runtime require / dynamic import) — always host activity.
 const baseline = new Set(BLOCKED_BUILTINS.filter((m) => loadList().includes(`NativeModule ${m}`)));
 
 // Watch for loads that happen after our eval — runtime requires and dynamic
@@ -69,15 +70,25 @@ export function checkRuntime(): DoctorReport {
     });
   }
 
-  if (baseline.has('cluster')) {
-    findings.push({
-      code: 'blocked-module-loaded',
-      detail: `'cluster' was loaded before the SDK imported — the replay sandbox would refuse this process`,
-      remediation: REPLAY_ENTRY_NOTE,
-    });
+  // Post-baseline loads: not present at eval, present now → loaded at runtime
+  // after the SDK imported. Detectable on every Node version.
+  const now = loadList();
+  const seen = new Set<string>();
+  for (const name of BLOCKED_BUILTINS) {
+    if (!baseline.has(name) && now.includes(`NativeModule ${name}`) && !seen.has(name)) {
+      seen.add(name);
+      findings.push({
+        code: 'blocked-module-loaded',
+        detail: `'${name}' loaded after SDK init — the replay sandbox would refuse this process`,
+        remediation: REPLAY_ENTRY_NOTE,
+      });
+    }
   }
 
+  // Watcher adds attribution where available (registerHooks, Node >= 22.15).
   for (const [name, via] of lateLoads) {
+    if (seen.has(name)) continue;
+    seen.add(name);
     findings.push({
       code: 'blocked-module-loaded',
       detail: `'${name}' loaded after SDK init (${via}) — the replay sandbox would refuse this process`,
