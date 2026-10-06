@@ -60,7 +60,8 @@ diff engine as `recurr replay`.
 
 ## Install
 
-Once published to npm:
+Published on npm under the `@recurr-dev` scope (v0.1.x — pre-1.0, the API may
+evolve):
 
 ```bash
 npm install @recurr-dev/sdk        # the capture/replay SDK (in your service)
@@ -68,17 +69,13 @@ npm install -g @recurr-dev/cli     # the CLI — installs the `recurr` binary
 npm install -g @recurr-dev/server  # optional: collector + browser UI
 ```
 
-**Until the first npm release**, run from source — everything below works:
+Or run from source — same flow, different entrypoints:
 
 ```bash
 pnpm install && pnpm build
 node packages/cli/dist/cli.js init        # or: npm link packages/cli → `recurr`
 node packages/server/dist/bin.js          # or: npm link packages/server → `recurr-server`
 ```
-
-To use the SDK from an external app before release, link the workspace:
-run `npm link` inside `packages/core`, `packages/store`, and `packages/sdk`,
-then `npm link @recurr-dev/core @recurr-dev/store @recurr-dev/sdk` in your app.
 
 ## Instrument your service
 
