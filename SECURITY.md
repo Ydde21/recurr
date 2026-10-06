@@ -45,14 +45,14 @@ and records exported/shared for review should be scrubbed first.
 ## Reporting a vulnerability
 
 This project has no dedicated security contact or bug-bounty program yet —
-it's a single-maintainer open-source project. Until the repository has a
-public remote, report issues through the repository's normal issue tracker
-once it exists; mark the report as security-sensitive and **do not attach
-exploit payloads, captured records containing real data, or live
-credentials** to a public issue.
+it's a single-maintainer open-source project. **Preferred channel: GitHub
+private vulnerability reporting** — open a private security advisory at
+github.com/Ydde21/recurr → Security → Advisories → "Report a vulnerability".
+That keeps the report confidential until a fix lands.
 
-If the maintainers configure GitHub private vulnerability reporting, prefer
-that channel.
+For non-sensitive issues, the normal issue tracker is fine. Either way,
+**do not attach exploit payloads, captured records containing real data,
+or live credentials** to any report.
 
 Please include: affected component (`sdk`/`replay`/`server`/`store`/`cli`/
 `ui`), what escaped or what isolation guarantee failed, the smallest
