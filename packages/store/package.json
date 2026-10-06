@@ -2,6 +2,21 @@
   "name": "@recurr/store",
   "version": "0.1.0",
   "description": "Recurr incident storage — filesystem + PostgreSQL backends",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "recurr",
+    "incident",
+    "replay",
+    "debugging",
+    "storage",
+    "postgres"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "exports": {
     ".": {
@@ -9,7 +24,10 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist", "migrations"],
+  "files": [
+    "dist",
+    "migrations"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",

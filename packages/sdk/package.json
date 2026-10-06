@@ -2,6 +2,23 @@
   "name": "@recurr/sdk",
   "version": "0.1.0",
   "description": "Recurr capture & replay SDK for Node.js — records incident execution context and replays it safely",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "recurr",
+    "incident",
+    "replay",
+    "debugging",
+    "sdk",
+    "nodejs",
+    "observability",
+    "capture"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "exports": {
     ".": {

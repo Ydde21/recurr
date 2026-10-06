@@ -2,6 +2,22 @@
   "name": "@recurr/core",
   "version": "0.1.0",
   "description": "Recurr incident record schema, redaction, and execution diff engine",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "recurr",
+    "incident",
+    "replay",
+    "debugging",
+    "schema",
+    "redaction",
+    "diff"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "exports": {
     ".": {
@@ -17,7 +33,9 @@
       "default": "./dist/diff.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",

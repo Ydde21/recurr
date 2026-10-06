@@ -2,11 +2,26 @@
   "name": "recurr",
   "version": "0.1.0",
   "description": "Recurr CLI — inspect, replay, diff and regression-test production incidents",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "recurr",
+    "incident",
+    "replay",
+    "debugging",
+    "cli",
+    "devtools",
+    "production"
+  ],
   "type": "module",
   "bin": {
     "recurr": "dist/cli.js"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests",

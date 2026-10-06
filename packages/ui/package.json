@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Recurr developer UI — incident inspection, replay, and diff workspace",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "build": "tsc --noEmit -p tsconfig.json && vite build",

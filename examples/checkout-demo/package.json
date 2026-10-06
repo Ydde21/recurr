@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Demo app for Recurr — a checkout-api with a reproducible payment-timeout bug",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",

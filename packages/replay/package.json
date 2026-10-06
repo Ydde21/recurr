@@ -2,6 +2,21 @@
   "name": "@recurr/replay",
   "version": "0.1.0",
   "description": "Recurr replay engine — reconstructs captured executions in an isolated child process",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "recurr",
+    "incident",
+    "replay",
+    "debugging",
+    "isolation",
+    "deterministic"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "exports": {
     ".": {
@@ -9,7 +24,9 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json && cp src/*.mjs dist/",
     "test": "vitest run",

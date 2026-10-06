@@ -15,7 +15,25 @@ program
   .name('recurr')
   .description('Production incident capture & replay — run production incidents back locally')
   .version('0.1.0')
-  .option('--store <spec>', 'store spec: fs:<path> | pg:<conn> | http(s)://collector', undefined);
+  .option('--store <spec>', 'store spec: fs:<path> | pg:<conn> | http(s)://collector', undefined)
+  .addHelpText(
+    'after',
+    `
+typical flow:
+  recurr init                       create .recurr/ config + local store
+  (instrument your app with @recurr/sdk — it captures failing requests)
+  recurr incidents                  list captured incidents
+  recurr inspect <RUN-…>            timeline, error, seed, redaction report
+  recurr replay <RUN-…> -t <cmd>    isolated replay + divergence report
+  recurr regression save <RUN-…>    pin the incident as a check
+  recurr regression run <REG-…> -t <fixed-cmd>   exit 1 while the bug reproduces
+
+server & UI:
+  recurr-server                     collector + browser UI on :4780
+  recurr doctor                     check config, store, environment
+
+store resolution: --store > $RECURR_STORE > .recurr/config.json > fs:.recurr/store`,
+  );
 
 function storeOpt(cmd: Command): string | undefined {
   return (cmd.optsWithGlobals() as { store?: string }).store;
@@ -35,23 +53,48 @@ function numOpt(raw: string | undefined, name: string): number | undefined {
 program
   .command('init')
   .description('Initialize recurr in the current project')
-  .option('--service <name>', 'service name')
+  .option('--service <name>', 'service name (default: directory name)')
   .action(async (opts: { service?: string }, cmd: Command) => {
     const dir = path.join(process.cwd(), CONFIG_DIR);
     await fs.mkdir(path.join(dir, 'store'), { recursive: true });
     const cfgPath = path.join(process.cwd(), CONFIG_FILE);
+    const serviceName = opts.service ?? path.basename(process.cwd());
     try {
       await fs.access(cfgPath);
       out(`${yellow('!')} ${CONFIG_FILE} already exists — leaving it alone`);
     } catch {
-      const cfg = { service: opts.service ?? path.basename(process.cwd()), store: 'fs:.recurr/store' };
+      const cfg = { service: serviceName, store: 'fs:.recurr/store' };
       await fs.writeFile(cfgPath, JSON.stringify(cfg, null, 2) + '\n');
-      out(`${green('✓')} wrote ${CONFIG_FILE}`);
+      out(`${green('✓')} wrote ${CONFIG_FILE} (service: ${serviceName}, store: fs:.recurr/store)`);
     }
     await fs.writeFile(path.join(dir, '.gitignore'), 'store/\n');
-    out(`${green('✓')} ${CONFIG_DIR}/ initialized (store/ is gitignored)`);
+    out(`${green('✓')} ${CONFIG_DIR}/ initialized — ${CONFIG_DIR}/store is gitignored (records can hold sensitive payloads)`);
+    // If the SDK is already a dependency, skip the install step.
+    let sdkInstalled = false;
+    try {
+      const pkg = JSON.parse(await fs.readFile(path.join(process.cwd(), 'package.json'), 'utf8')) as {
+        dependencies?: Record<string, string>;
+        devDependencies?: Record<string, string>;
+      };
+      sdkInstalled = !!(pkg.dependencies?.['@recurr/sdk'] ?? pkg.devDependencies?.['@recurr/sdk']);
+    } catch {
+      /* no package.json — still show the full instructions */
+    }
     out('');
-    out(dim('  next: instrument your app with @recurr/sdk — see README'));
+    out(bold('next steps'));
+    let step = 1;
+    if (!sdkInstalled) {
+      out(`  ${step++}. install the SDK      ${cyan('npm install @recurr/sdk')}  (or pnpm add / yarn add)`);
+    }
+    out(`  ${step++}. instrument your app  ${dim('— see README "Instrumenting your service". The short version:')}`);
+    out(dim(`       import { init } from '@recurr/sdk';`));
+    out(dim(`       const recurr = await init({ service: '${serviceName}', capture: { on: 'error' } });`));
+    out(dim('       app.use(recurr.middleware());  app.use(recurr.errorMiddleware());'));
+    out(dim('       recurr.instrumentDb(pool);   // pg.Pool / pg.Client / pg-mem'));
+    out(`  ${step++}. run your app — failing requests are captured to ${CONFIG_DIR}/store`);
+    out(`  ${step++}. ${cyan('recurr incidents')} → ${cyan('recurr replay <RUN-…> -t "node dist/index.js"')} → ${cyan('recurr diff …')}`);
+    out('');
+    out(dim('  recurr-server serves the browser UI + collector API on :4780 when you want a workspace.'));
   });
 
 // ---------------------------------------------------------------------------
@@ -71,6 +114,8 @@ program
       }
       if (!list.length) {
         out(dim('no incidents captured yet'));
+        out(dim('  incidents appear here once an instrumented service (@recurr/sdk) hits a failing request'));
+        out(dim(`  — or try the demo: ${bold('pnpm demo')} from the recurr repo`));
         return;
       }
       out(table(INCIDENT_HEADERS, list.map(incidentRow)));
@@ -239,8 +284,9 @@ program
         process.exitCode = 1;
         return;
       }
+      const existed = await store.get(v.record.id);
       await store.save(v.record);
-      out(`${green('✓')} imported ${v.record.id}`);
+      out(`${green('✓')} imported ${v.record.id}${existed ? dim(' (replaced existing record)') : ''}`);
     } finally {
       await store.close();
     }

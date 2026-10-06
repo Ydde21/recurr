@@ -2,99 +2,125 @@
 
 **Run production incidents back locally.**
 
-Recurr is an open-source production incident replay & debugging platform. When
-an incident occurs in production, Recurr captures the minimum sufficient
-execution context into a structured **Incident Record** — then reconstructs and
-replays that execution inside an isolated local environment so you can debug,
-modify inputs, and verify fixes.
+Recurr captures what actually happened when a request failed in production —
+the request, the DB queries and their rows, the outbound HTTP calls and their
+responses, the randomness, the clock, the error — into a structured **Incident
+Record**. Then it rebuilds that execution inside an isolated local process so
+you can replay it deterministically, diff original vs replay, and verify that
+your fix actually fixes it.
 
 ```
-production incident → capture → Incident Record → reconstruct → replay → diff → verify fix
+production incident → capture → Incident Record → replay → diff → verify fix
 ```
 
-## Quick start (demo)
+Node.js only, single-service replay, self-hosted. Free and open source (MIT).
+
+## Why it exists
+
+A timeout in production is usually a *sequence*: request → user lookup →
+product lookup → three retried calls to a payment API that hung →
+`PaymentConfirmationTimeout` → 500. Logs give you the last line. Recurr gives
+you the whole execution — captured, replayable, diffable.
+
+| Without Recurr | With Recurr |
+|---|---|
+| Reconstruct prod state by hand | The record *is* the state — DB rowsets and HTTP responses replay verbatim |
+| "Can't reproduce locally" | `recurr replay RUN-…` injects the recorded request into your real code |
+| Did the fix work? shrug | `recurr regression run` exits non-zero until the bug stops reproducing |
+
+## Try it in 60 seconds
+
+```bash
+git clone <this-repo> && cd recurr
+pnpm install && pnpm build
+pnpm demo
+```
+
+The demo needs nothing but Node ≥ 20 — it runs an embedded Postgres (pg-mem)
+and a payment simulator locally. It walks the whole loop:
+
+```
+checkout-api (Express, instrumented)  →  POST /api/orders
+  payment-sim hangs on orders > $500  →  PaymentConfirmationTimeout → HTTP 500
+  recurr captures the incident        →  recurr replay reproduces it
+  index-fixed.js returns 202          →  regression scenario proves the fix
+```
+
+Then open the debugging UI:
+
+```bash
+RECURR_STORE=fs:examples/checkout-demo/.recurr/store recurr-server
+# → http://127.0.0.1:4780
+```
+
+Incidents → timeline → event inspector → replay → diff → divergence
+investigation → regression scenario. The UI talks to the same store the CLI
+uses; replays launched from the browser run through the same isolation and
+diff engine as `recurr replay`.
+
+## Install
+
+Once published to npm:
+
+```bash
+npm install @recurr/sdk        # the capture/replay SDK (in your service)
+npm install -g recurr          # the CLI
+npm install -g @recurr/server  # optional: collector + browser UI
+```
+
+**Until the first npm release**, run from source — everything below works:
 
 ```bash
 pnpm install && pnpm build
-pnpm demo          # runs the full capture → replay → diff → fix-verification loop
+node packages/cli/dist/cli.js init        # or: pnpm link --global ./packages/cli
+node packages/server/dist/bin.js          # recurr-server
 ```
 
-The demo spins up a `checkout-api` (Express + embedded Postgres via pg-mem) plus
-a `payment-sim` dependency that hangs on orders over $500. A large order triggers
-`PaymentConfirmationTimeout` → Recurr captures the incident → `recurr replay`
-reproduces it deterministically (mocked DB + payment API, replayed
-randomness/uuids, shifted wall clock) → `index-fixed.js` shows the fix landing
-(500 → 202) → the incident is saved as a regression scenario.
+To use the SDK from an external app before release, link the workspace:
+run `npm link` inside `packages/core`, `packages/store`, and `packages/sdk`,
+then `npm link @recurr/core @recurr/store @recurr/sdk` in your app.
 
-## How it works
+## Instrument your service
 
-### Capture
+Three lines of middleware plus optional DB instrumentation:
 
 ```ts
-import * as recurr from '@recurr/sdk';
+import { init } from '@recurr/sdk';
 
-const recurr = await recurr.init({
+const recurr = await init({
   service: 'checkout-api',
   version: '1.8.2',
-  capture: { on: 'error' },            // persist only failing executions
-  redaction: { fields: ['x-internal-token'] },
+  capture: { on: 'error' },               // persist only failing executions
+  redaction: { fields: ['x-internal-token'] },  // extra denylist fields
 });
 
-app.use(recurr.middleware());          // request/response + timeline capture
-app.use(recurr.errorMiddleware());     // before your error handler
+app.use(recurr.middleware());          // captures request/response/timeline
+app.use(recurr.errorMiddleware());     // BEFORE your error handler
 recurr.instrumentDb(pool);             // pg.Pool / pg.Client / pg-mem
 
-// auth: captures the resolved principal (not the credential)
+// auth: captures the resolved principal — never the credential
 const principal = await recurr.auth(req, verifyBearer);
 ```
 
-The SDK captures, per request: the HTTP request/response, resolved auth
-principal, `db.query` calls (text, params, rows, timing), outbound
-`fetch`/`http.request` calls (url, status, bodies, failures), `Math.random()` /
-`crypto.randomUUID()` outputs, the wall-clock start, errors, retries and custom
-events — all scoped via `AsyncLocalStorage`, redacted before persistence.
+In a project, `recurr init` writes `.recurr/config.json` and a gitignored
+`.recurr/store/` — that's where Incident Records land. Per request, the SDK
+records: the HTTP request/response, auth principal, `db.query` calls (text,
+params, rows, timing), outbound `fetch`/`http.request` calls, `Math.random()` /
+`crypto.randomUUID()` outputs, wall-clock start, errors, retries, and custom
+events — scoped via `AsyncLocalStorage`, **redacted before persistence**.
 
-### Replay
-
-```bash
-recurr replay RUN-KFE489 -t "node dist/index.js"
-```
-
-The replay engine spawns your app with `RECURR_MODE=replay`. Inside that
-process:
-
-- `listen()` is hijacked to `127.0.0.1:0` — loopback only, ephemeral port
-  (covers `http`, `https` and raw `net` servers).
-- A hard egress guard refuses outbound `net`/`tls`/`dgram` sockets, DNS
-  lookups, `child_process` spawns and `worker_threads` — instrumented and
-  *un*instrumented egress alike. Only the record store endpoint
-  (`pg:`/`http(s):` spec) stays reachable so the replay record can persist.
-- `db.query` never touches a database — recorded rowsets are returned in
-  order. `pool.connect()` returns a synthetic client.
-- `fetch` / `http.request` never egress — recorded responses (including
-  recorded timeouts/resets) are synthesized.
-- `Math.random` / `crypto.randomUUID` replay the captured sequences; the clock
-  is shifted to the incident's wall time. Over-consumption falls back to a
-  deterministic PRNG *and* emits a `replay.note` divergence — never silently.
-- `recurr.auth()` returns the captured principal — production credentials are
-  never needed (they were redacted before storage anyway). Environment
-  variables matching `key|secret|token|passw|credential|dsn|…` are stripped
-  from the child.
-
-The original request is injected over loopback HTTP, the replay produces its
-own Execution Record, and the diff engine reports where it diverged —
-including nondeterminism usage drift, recorded calls the replay never made,
-and calls the replay made that were never recorded.
-
-Escape hatches (explicit, for constrained environments):
-`RECURR_REPLAY_ALLOW_NET=1` disables the egress guard;
-`RECURR_REPLAY_INHERIT_ENV=1` disables env sanitization.
-
-### Diff
+## The workflow
 
 ```bash
-recurr diff RUN-KFE489 RPL-QCW44B
+recurr incidents                        # what's captured?
+recurr inspect RUN-KFE489               # request, timeline, error, seed, redaction
+recurr replay  RUN-KFE489 -t "node dist/index.js"        # reproduce it
+recurr replay  RUN-KFE489 -t "node dist/index-fixed.js"  # verify the fix
+recurr regression save RUN-KFE489 --name "payment timeout"
+recurr regression run  "payment timeout" -t "node dist/index-fixed.js"  # CI gate
 ```
+
+A replay against unchanged code prints:
 
 ```
 outcome   reproduced — same result as the original execution
@@ -103,176 +129,177 @@ events    10 matched · 0 missing · 0 extra · 0 mismatched
 timing    original 2.42s → replay 4.2ms (-99.8%)
 ```
 
-After a fix, `statusChanged` reports the outcome flip — the incident becomes a
-regression check: `recurr regression save <id> --name ...` then
-`recurr regression run <name> -t "node dist/index-fixed.js"`.
+Against the fixed build the outcome flips (500 → 202), `statusChanged` reports
+it, and `recurr regression run` exits 0 — or stays exit 1 while the bug still
+reproduces, which is what makes it usable in CI.
 
-## CLI
+## What replay actually does
+
+`recurr replay` spawns your app with `RECURR_MODE=replay`. Inside that child:
+
+- `listen()` (http/https/net) is forced to `127.0.0.1:0` — loopback, ephemeral.
+- DB queries never reach a database — the recorded rowsets are returned in
+  order, with lookahead matching for small structural drift.
+- `fetch`/`http.request` never egress — recorded responses (including
+  recorded timeouts/resets) are synthesized.
+- `Math.random`/`crypto.randomUUID` replay the captured sequences; the clock
+  is shifted to the incident's wall time. Over-consumption falls back to a
+  deterministic PRNG and emits a `replay.note` divergence — never silently.
+- `recurr.auth()` returns the captured principal — production credentials are
+  never needed (the credential itself was redacted before storage).
+- A socket-level guard blocks *un*instrumented egress too: raw `net`/`tls`/
+  `dgram` sockets, DNS, `child_process`, `worker_threads`, native addon
+  loading, and dangerous `process.binding` internals — plus a module-load
+  blocklist so `import { execSync } from 'node:child_process'` fails at load
+  time. The record store endpoint is the only permitted external target.
+- The child exits when its orchestrator dies — even on SIGKILL — so replays
+  can't orphan instrumented processes.
+
+Then the original request is injected over loopback, the replay writes its
+own Execution Record, and the diff engine reports every divergence —
+including nondeterminism drift, recorded calls never made, and calls made
+that were never recorded.
+
+The result is honest: a replay that diverged says `diverged` or
+`partially matched` with a score below 100 — it never reports success on a
+mismatch.
+
+## CLI reference
 
 | Command | What it does |
 |---|---|
-| `recurr init` | create `.recurr/` config + local store |
-| `recurr incidents` | list captured incidents |
-| `recurr inspect <id>` | request, timeline, error, redaction report |
-| `recurr replay <id> -t <cmd>` | isolated replay + diff report |
-| `recurr diff <inc> <rpl>` | re-diff any stored pair |
-| `recurr export/import` | move records between stores as JSON |
-| `recurr regression save/list/run` | incidents → permanent test scenarios |
-| `recurr doctor` | environment & store health check |
+| `recurr init [--service <name>]` | create `.recurr/` config + gitignored local store |
+| `recurr incidents [--service] [--limit] [--json]` | list captured incidents |
+| `recurr inspect <id> [--json]` | request, timeline, error, seed, redaction report |
+| `recurr replay <id> -t <cmd> [--cwd] [--timeout] [--ready-timeout]` | isolated replay + diff report |
+| `recurr diff <inc> <rpl> [--json]` | re-diff any stored pair |
+| `recurr export <id> [-o file]` / `recurr import <file>` | move records between stores as JSON |
+| `recurr regression save <id> --name <n>` | pin an incident as a scenario |
+| `recurr regression list` / `run <idOrName> -t <cmd>` | run exits 1 while the bug reproduces |
+| `recurr doctor` | node version, config file, store connectivity, collector health |
 
-Store resolution: `--store` flag → `RECURR_STORE` env → `.recurr/config.json` →
-`fs:.recurr/store`. Specs: `fs:<path>`, `postgres://…` / `pg:<conn>`,
-`http(s)://<collector>`.
+`recurr --help` prints the full typical-flow cheatsheet. Store resolution:
+`--store` flag → `RECURR_STORE` env → `.recurr/config.json` → `fs:.recurr/store`.
+Specs: `fs:<path>`, `postgres://…` / `pg:<conn>`, `http(s)://<collector>`.
 
-## Packages
+## Self-hosting the server + UI
 
-| Package | Purpose |
-|---|---|
-| `@recurr/core` | Incident Record schema, redaction engine, execution diff |
-| `@recurr/sdk` | Node.js capture & replay SDK (express middleware, db/http/determinism interception) |
-| `@recurr/store` | `FileStore`, `PgStore` (migrations in `packages/store/migrations`), `HttpStore` |
-| `@recurr/replay` | Replay orchestrator — spawn, inject, collect, diff |
-| `@recurr/server` | Collector + query API (`recurr-server`) |
-| `@recurr/ui` | Developer UI — incident inspection, replay launch, diff workspace |
-| `recurr` | CLI |
-| `examples/checkout-demo` | End-to-end demo app |
-
-## Developer UI
-
-`pnpm build` produces `packages/ui/dist`, which `recurr-server` serves
-automatically at `/` (override with `RECURR_UI_DIR`). The API works standalone
-regardless — the UI is optional.
-
-The UI exposes the debugging workflow end-to-end: incident list (search /
-service / env / status filters, sortable columns) → incident workspace
-(request, response, error, auth principal, seed, redaction report) →
-virtualized execution timeline with a per-event inspector and a derived
-dependency graph → replay dialog → original-vs-replay diff (divergence list,
-synchronized side-by-side timelines, body diff) → regression scenarios
-(save from an incident, run against a target build, reports whether the bug
-still reproduces).
-
-Replays triggered from the UI run through the same orchestrator as the CLI —
-same isolation, same diff engine (`POST /v1/incidents/:id/replays`,
-`POST /v1/regressions/:id/run`). Both endpoints need a resolvable store spec
-on the server (`RECURR_STORE`/`DATABASE_URL`/`fs:` path) and return 501
-without one.
-
-## Self-hosting
+`recurr-server` is the collector + query API + UI host. Default port `4780`.
 
 ```bash
-docker compose up        # postgres + recurr-server on :4780
-RECURR_STORE=http://localhost:4780 recurr incidents
+RECURR_STORE=fs:.recurr/store recurr-server        # filesystem store
+DATABASE_URL=postgres://… recurr-server            # Postgres (migrations auto-apply)
 ```
 
-Or point the server at Postgres directly:
-`DATABASE_URL=postgres://… recurr-server` (migrations auto-apply on boot).
+Or with Docker (Postgres + server + UI in one shot):
 
-> **Exposure warning:** `recurr-server` has no authentication, and the replay
-> endpoints intentionally execute a target command on the host (that's the
-> product). Run it on localhost or behind an authenticating reverse proxy —
-> never expose it to an untrusted network. Replay children are isolated from
-> the network but not the filesystem; hostile replay targets need disposable
-> machines.
+```bash
+docker compose up     # → http://127.0.0.1:4780, pg-backed, data in the pgdata volume
+```
 
-## Privacy & safety
+Point a CLI at a remote collector with `--store http://host:4780` or
+`RECURR_STORE=http://…`. Instrumented services can write to it the same way
+(`init({ store: 'http://…' })`).
 
-- Redaction runs **in the SDK before persistence** — denylist fields
+## Security model — read this before exposing the server
+
+**`recurr-server` has no authentication, and the replay endpoints
+intentionally execute a caller-supplied command on the host.** That is the
+product: a replay must run your code. Exposing the port to an untrusted
+network is remote code execution for anyone who can reach it.
+
+- Default safe posture: **localhost only**, or bound behind an authenticating
+  reverse proxy / VPN. The UI and CLI assume this.
+- Replay children are network-isolated (loopback-only listeners, egress
+  guard, module blocklist) and env-sanitized (`*_KEY`, `*TOKEN*`, `*PASS*`,
+  `DATABASE_URL`, proxy vars, cloud/kube/docker credentials are stripped;
+  `target.env` cannot re-enable networking or `NODE_OPTIONS`).
+- **Replay is not a formal sandbox.** Filesystem access is not sandboxed —
+  replayed code keeps read/write to its working tree. Don't run untrusted
+  replay targets on machines you care about.
+- Redaction runs in the SDK *before* persistence: denylist fields
   (`authorization`, `cookie`, `password*`, `*token*`, `credit_card`, `ssn`,
-  `session`, `csrf`, `jwt`, …), case/underscore-insensitive, plus custom
-  `fields` and explicit `paths`. Circular structures, `__proto__` keys and
-  URL userinfo (`user:pass@host`) are handled safely.
-- Auth replays use the captured *principal*, not the credential.
-- Replay processes bind loopback-only on ephemeral ports; instrumented egress
-  (`fetch`, `http(s)`, `db`) is served from the record — no production systems
-  are touched. A socket-level egress guard also refuses uninstrumented
-  outbound connections, DNS lookups, UDP sends, subprocesses, worker threads,
-  native addon loading (`process.dlopen` / `.node` requires) and dangerous
-  `process.binding`/`_linkedBinding` internals (`spawn_sync`, `tcp_wrap`, …).
-- A `NODE_OPTIONS` preload blocklist refuses ESM/CJS module loads of the
-  blocked subsystems (`node:child_process`, `node:worker_threads`, `node:dgram`,
-  `node:cluster`) so even a static `import { execSync }` fails at load time.
-- Sensitive env vars are not inherited by replay children (`*_KEY`, `*TOKEN*`,
-  `*PASS*`, `*DSN*`, `DATABASE_URL`, proxy vars, cloud credentials, kube/docker
-  config, …). A target-provided env can never override
-  `RECURR_REPLAY_ALLOW_NET`, `RECURR_REPLAY_INHERIT_ENV`, or `NODE_OPTIONS`.
-- Records imported via `recurr import` or posted to the collector are
-  schema-validated; unsafe ids can't traverse the filesystem store.
+  `session`, `csrf`, `jwt`, …) case/underscore-insensitive, plus custom
+  `fields`/`paths`. Circular structures, `__proto__`, and URL userinfo are
+  handled. The store should never contain raw secrets — treat a record as
+  still sensitive and keep `.recurr/store` gitignored (init does this).
+- Records imported or POSTed to the collector are schema-validated; unsafe
+  ids can't traverse the filesystem store; `/healthz` redacts store-spec
+  credentials; at most 4 replays run concurrently (extras get `429`).
 
-## Framework compatibility
+Escape hatches for constrained environments (explicit and loud):
+`RECURR_REPLAY_ALLOW_NET=1` disables the egress guard;
+`RECURR_REPLAY_INHERIT_ENV=1` disables env sanitization.
 
-`recurr.middleware()` is connect-style `(req, res, next)`. Verified by the
-compat suite (`packages/sdk/test/compat.test.ts`):
+## Compatibility
+
+`recurr.middleware()` is connect-style `(req, res, next)`. Verified by
+`packages/sdk/test/compat.test.ts`:
 
 | Framework | Status | Notes |
 |---|---|---|
-| Express 4 | ✅ full | body via `express.json()`/`urlencoded()`/`raw()`; `errorMiddleware()` captures thrown/nexted errors |
-| Fastify 5 + `@fastify/middie` | ✅ capture | `req.body` is NOT populated in connect middleware (Fastify keeps the parsed body on its own wrapper) — body capture needs a preHandler or the raw body |
-| Koa 3 | ✅ capture via adapter | wrap: `app.use(async (ctx, next) => { await new Promise(r => mw(ctx.req, ctx.res, r)); await next(); })`; `req.body` needs `@koa/bodyparser`-style population |
-| `node:http` raw | ✅ manual | call the middleware inside your request handler; thrown handlers abort the record honestly |
-| Hono / fetch-style | ❌ unsupported | no `(req, res, next)` mount point — `Request`/`Response` objects bypass `http.IncomingMessage` teeing entirely |
+| Express 4 | ✅ full | body via `express.json()`/`urlencoded()`/`raw()` |
+| Fastify 5 + `@fastify/middie` | ✅ capture | `req.body` isn't populated in connect middleware — needs a preHandler or raw body |
+| Koa 3 | ✅ capture via adapter | `app.use(async (ctx, next) => { await new Promise(r => mw(ctx.req, ctx.res, r)); await next(); })`; body needs `@koa/bodyparser`-style population |
+| `node:http` raw | ✅ manual | call the middleware inside your handler |
+| Hono / fetch-style | ❌ unsupported | no `(req,res,next)` mount — `Request`/`Response` bypasses `http.IncomingMessage` teeing |
 
-Multipart/form bodies, binary bodies, URL-encoded forms and compressed
-(gzip/deflate) responses are all verified — encoded/binary payloads store
-base64, textual bodies store UTF-8.
+DB instrumentation covers `pg.Pool`/`pg.Client`/`pg-mem` — anything else is
+untouched. Replay DB fidelity is *recorded rowsets in order*, not a
+materialized snapshot.
 
-## Capture limits & soak results
+## Known limitations
 
-| Limit | Default | Behavior when exceeded |
-|---|---|---|
-| `maxBodyBytes` (init option) | 64 KiB | body clipped at a valid UTF-8 boundary; `redaction.truncatedPaths` records `request.body`/`response.body` honestly |
-| `MAX_EVENTS` per record | 100,000 | `validateRecord` rejects; record fails safe |
-| `MAX_SEED_VALUES` | 1,000,000 | same |
-
-Soak suite (`packages/sdk/test/soak.test.ts`) exercises 100 KB / 1 MB / 10 MB
-payloads, 40-request concurrent bursts, aborted clients mid-response, and
-repeated captures: records stay bounded by `maxBodyBytes`, oversized bodies
-are flagged truncated, aborted requests persist honest partial records,
-concurrent records get unique ids with no seed/event cross-talk, and
-`await recurr.flush()` does not return until in-flight requests persist.
-
-## Known limitations (MVP scope)
-
-- Named ESM imports of builtins snapshot the binding and escape monkeypatching
-  (`import { request } from 'node:http'`, `import { randomUUID } from
-  'node:crypto'`). Default/namespace-style `import http from 'node:http'` and
-  `http.request(...)` are intercepted; `fetch` is recommended.
-- Request body capture relies on a body parser populating `req.body`
-  (raw/stream bodies are not yet captured).
-- Replay DB fidelity is "recorded rowsets in order" — not a materialized
-  database snapshot. Lookahead matching tolerates small structural drift and
-  emits `replay.note` divergences.
-- Code executed inside a *fresh* `vm` realm gets unpatched globals — very
-  rare, but such code would bypass interception.
-- If the record store shares a host:port with a production dependency (e.g.
-  the same Postgres server is both store and app DB), the egress allowlist
-  can't distinguish them at socket level — keep them on separate endpoints.
-- An `http.out` event carrying `responsePending: true` means the app never
-  consumed the upstream response body — headers/status are recorded, the body
-  isn't (capture gap, surfaced honestly rather than shown as an empty body).
-- Clock-read counts (`seed.timeReads`) are reported as informational drift —
-  infrastructure-level `Date.now()` calls legitimately differ between live and
-  mocked dependencies and don't lower the match score.
-- `crypto.randomBytes` / `randomInt` / `randomFillSync` / `getRandomValues`
-  are not captured. At replay they draw deterministic bytes from the
-  record-seeded PRNG and emit a `replay.note` divergence rather than
-  silently producing real entropy.
-- Dependencies that load native addons (`sharp`, `bcrypt` native, …) fail at
-  replay — `process.dlopen` is blocked because uninstrumented native code
-  would escape the sandbox entirely.
-- `matchScore` measures events + outcome: a response status/body/error
-  divergence docks the score once (it can't falsely report 100%), while the
-  per-field divergences stay visible in the report.
-- Filesystem access is not sandboxed — replayed code keeps read/write to the
-  replay child's working tree. Run replays on machines you consider
-  disposable for hostile-target scenarios.
+- Named ESM imports of builtins snapshot bindings and escape monkeypatching
+  (`import { request } from 'node:http'`). Default/namespace imports are
+  intercepted; `fetch` is recommended.
+- Request body capture needs a body parser populating `req.body`.
+- Code in a fresh `vm` realm gets unpatched globals (very rare escape).
+- If the record store shares host:port with a production dependency, the
+  egress allowlist can't distinguish them — keep stores on separate endpoints.
+- `responsePending: true` on an `http.out` event means the app never consumed
+  the upstream body — headers/status recorded, body isn't (honest gap).
+- `crypto.randomBytes`/`randomInt`/`randomFillSync`/`getRandomValues` aren't
+  captured; replay draws deterministic PRNG bytes + emits `replay.note`.
+- Native addons (`sharp`, `bcrypt` native, …) fail at replay — `dlopen` is
+  blocked because uninstrumented native code would bypass isolation.
+- `matchScore` counts events + outcome; a status/body/error divergence docks
+  the score (a false 100% is impossible), clock-read drift is informational.
 - Single-service replay; distributed multi-service replay is future work.
+- Capture limits: bodies cap at 64 KiB (`maxBodyBytes`), records at 100k
+  events / 1M seed values — over-limit bodies are flagged `truncated`, not
+  silently clipped.
+
+## Troubleshooting
+
+| Symptom | Likely cause → fix |
+|---|---|
+| `recurr incidents` is empty | Capture is `on: 'error'` by default — only failing requests persist. Check `recurr doctor` for store/config. |
+| `replay failed: timed out waiting for recurr:ready` | The target didn't reach its `listen()` within `--ready-timeout` (default 20s; max 120s). Confirm the command starts the app (`-t "node dist/index.js"`, `--cwd` correct) and the app loads `@recurr/sdk` at startup. |
+| `target exited (1)` / module load error at replay | The app imports a blocked module (`child_process`, `worker_threads`, `dgram`, `cluster`) or a native addon. Both are blocked by design — see Security model / Known limitations. |
+| Replay can't write the record | The child needs to reach the store: `fs:` specs are absolutized automatically; for `pg:`/`http:` make sure the store is reachable from the replay host. `RECURR_STORE` is propagated to the child. |
+| Egress blocked at replay | Expected — that's the isolation. Instrumented calls are served from the record; anything else must be mocked or moved behind `instrumentDb`/recorded HTTP. `RECURR_REPLAY_ALLOW_NET=1` opts out (loudly). |
+| `no record RUN-…` / `404` | Wrong store — check `--store`/`RECURR_STORE`/`.recurr/config.json`. `recurr doctor` shows the resolved spec. |
+| Port already in use | Server default is `4780` (`PORT` env overrides); demo uses `4790`/`4781`. |
+| `docker compose up` serves API but no UI | Rebuild the image (`docker compose build`) — older images lack `packages/ui`. |
+| Incident shows as diverged even unchanged | Check divergence kinds: `replay.note`/`seed-usage` drift is informational; `status`/`body`/`error` divergences dock the score. |
 
 ## Development
 
 ```bash
 pnpm install
-pnpm build     # turbo: builds all packages
-pnpm test      # unit + e2e (spawns the demo, captures, replays, diffs)
-pnpm demo      # scripted end-to-end walkthrough
+pnpm build       # turbo: all packages
+pnpm test        # unit + compat + soak + replay e2e (spawns the demo)
+pnpm demo        # scripted capture → replay → diff → fix walkthrough
+pnpm --filter @recurr/ui dev   # UI dev server on :5179, proxies /v1 → :4780
 ```
+
+Layout: `packages/{core,sdk,store,replay,server,ui,cli}` +
+`examples/checkout-demo`. PgStore tests are opt-in
+(`DATABASE_URL=postgres://… pnpm --filter @recurr/store test`). See
+[CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md) for architecture
+invariants.
+
+## License
+
+[MIT](LICENSE).

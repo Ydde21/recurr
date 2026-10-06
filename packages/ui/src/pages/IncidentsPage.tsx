@@ -146,7 +146,7 @@ export function IncidentsPage({ searchRef }: { searchRef?: React.RefObject<HTMLI
             hint={
               q.data?.length
                 ? 'try widening the search or clearing filters'
-                : 'instrument a service with @recurr/sdk and it will persist captured executions here'
+                : 'incidents land here when an instrumented service (@recurr/sdk) hits a failing request — run `pnpm demo` in the recurr repo for a ready-made incident'
             }
           />
         ) : (

@@ -1,13 +1,16 @@
-# Minimal image for the recurr collector/API server.
+# Minimal image for the recurr collector/API server (+ static developer UI).
 FROM node:22-alpine AS build
 RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 WORKDIR /app
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml tsconfig.base.json turbo.json ./
 COPY packages/core ./packages/core
 COPY packages/store ./packages/store
+COPY packages/replay ./packages/replay
+COPY packages/sdk ./packages/sdk
 COPY packages/server ./packages/server
-RUN pnpm install --filter @recurr/server... --frozen-lockfile || pnpm install --filter @recurr/server...
-RUN pnpm --filter @recurr/server... build
+COPY packages/ui ./packages/ui
+RUN pnpm install --filter @recurr/server... --filter @recurr/ui --frozen-lockfile || pnpm install --filter @recurr/server... --filter @recurr/ui
+RUN pnpm --filter @recurr/server... --filter @recurr/ui build
 
 FROM node:22-alpine
 RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
