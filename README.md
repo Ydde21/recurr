@@ -14,7 +14,7 @@ production incident → capture → Incident Record → replay → diff → veri
 ```
 
 Node.js only, single-service replay, self-hosted. Free and open source (MIT).
-Site: [recurr-eddys-projects-f4a8f9dd.vercel.app](https://recurr-eddys-projects-f4a8f9dd.vercel.app)
+Site: [recurr-dev.vercel.app](https://recurr-dev.vercel.app)
 
 ## Why it exists
 
