@@ -36,6 +36,8 @@ pnpm install && pnpm build
 pnpm demo
 ```
 
+![capture → inspect → replay → diff → regression → fix verified](docs/demo.gif)
+
 The demo needs nothing but Node ≥ 20 — it runs an embedded Postgres (pg-mem)
 and a payment simulator locally. It walks the whole loop:
 
