@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { promises as fs } from 'node:fs';
+import { promises as fs, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { Command } from 'commander';
 import { diffExecutions, validateRecord, type RegressionScenario } from '@recurr-dev/core';
@@ -10,11 +10,15 @@ import { bold, cyan, dim, fmtTime, gray, green, INCIDENT_HEADERS, incidentRow, p
 const out = (s: string) => console.log(s);
 const errOut = (s: string) => console.error(s);
 
+const pkg = JSON.parse(
+  readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+) as { version: string };
+
 const program = new Command();
 program
   .name('recurr')
   .description('Production incident capture & replay — run production incidents back locally')
-  .version('0.1.0')
+  .version(pkg.version)
   .option('--store <spec>', 'store spec: fs:<path> | pg:<conn> | http(s)://collector', undefined)
   .addHelpText(
     'after',
