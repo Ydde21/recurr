@@ -143,7 +143,9 @@ reproduces, which is what makes it usable in CI.
   is shifted to the incident's wall time. Over-consumption falls back to a
   deterministic PRNG and emits a `replay.note` divergence — never silently.
 - `recurr.auth()` returns the captured principal — production credentials are
-  never needed (the credential itself was redacted before storage).
+  never needed (the credential itself was redacted before storage). Routes
+  that verify credentials *without* `recurr.auth()` will 401 under replay —
+  the header is gone by design, not lost.
 - A socket-level guard blocks *un*instrumented egress too: raw `net`/`tls`/
   `dgram` sockets, DNS, `child_process`, `worker_threads`, native addon
   loading, and dangerous `process.binding` internals — plus a module-load
@@ -241,7 +243,12 @@ Reporting a vulnerability: see [SECURITY.md](SECURITY.md).
 | Fastify 5 + `@fastify/middie` | ✅ capture | `req.body` isn't populated in connect middleware — needs a preHandler or raw body |
 | Koa 3 | ✅ capture via adapter | `app.use(async (ctx, next) => { await new Promise(r => mw(ctx.req, ctx.res, r)); await next(); })`; body needs `@koa/bodyparser`-style population |
 | `node:http` raw | ✅ manual | call the middleware inside your handler |
-| Hono / fetch-style | ❌ unsupported | no `(req,res,next)` mount — `Request`/`Response` bypasses `http.IncomingMessage` teeing |
+| Hono (`@hono/node-server`) | ✅ server-boundary wrap | no `app.use` mount, but wrap at the socket boundary: `createServer((req,res) => mw(req,res,() => getRequestListener(app.fetch)(req,res)))` — verified on a real Hono API |
+| Next.js (`next dev`/`next start`) | ⚠️ capture only | wrap a custom server's handler the same way — but Next boot-loads `child_process`/workers, so the isolation preload can never replay it |
+
+"Fetch-style" (a bare `Request → Response` handler with no node `req`/`res`
+boundary — e.g. edge runtimes) remains unsupported: there's no
+`http.IncomingMessage` to intercept.
 
 DB instrumentation covers `pg.Pool`/`pg.Client`/`pg-mem` — anything else is
 untouched. Replay DB fidelity is *recorded rowsets in order*, not a
@@ -268,6 +275,12 @@ materialized snapshot.
 - Capture limits: bodies cap at 64 KiB (`maxBodyBytes`), records at 100k
   events / 1M seed values — over-limit bodies are flagged `truncated`, not
   silently clipped.
+- Framework-owned runtimes (Next.js, anything that boot-loads `child_process`/
+  `worker_threads`) can *capture* but never *replay* — the module blocklist
+  kills the process before `listen()`. Capture-only by design.
+- Replay targets must be a plain-Node entry — `tsx`/`nodemon`/bundled dev
+  runners spawn `child_process` internally and hit the same blocklist.
+  Compile first (`tsc`, `esbuild --bundle`) and point `-t` at the output.
 
 ## Troubleshooting
 
@@ -275,7 +288,8 @@ materialized snapshot.
 |---|---|
 | `recurr incidents` is empty | Capture is `on: 'error'` by default — only failing requests persist. Check `recurr doctor` for store/config. |
 | `replay failed: timed out waiting for recurr:ready` | The target didn't reach its `listen()` within `--ready-timeout` (default 20s; max 120s). Confirm the command starts the app (`-t "node dist/index.js"`, `--cwd` correct) and the app loads `@recurr-dev/sdk` at startup. |
-| `target exited (1)` / module load error at replay | The app imports a blocked module (`child_process`, `worker_threads`, `dgram`, `cluster`) or a native addon. Both are blocked by design — see Security model / Known limitations. |
+| `target exited (1)` / module load error at replay | The app imports a blocked module (`child_process`, `worker_threads`, `dgram`, `cluster`) or a native addon — common when `-t` is `tsx`/`nodemon`/`next` (they spawn processes internally). Compile to plain node output and target that. See Known limitations. |
+| Replayed request gets 401 though the original was authorized | Expected — the credential was redacted before storage and replays never carry it. Wrap the verify step in `recurr.auth(req, verify)` so replay serves the captured principal. |
 | Replay can't write the record | The child needs to reach the store: `fs:` specs are absolutized automatically; for `pg:`/`http:` make sure the store is reachable from the replay host. `RECURR_STORE` is propagated to the child. |
 | Egress blocked at replay | Expected — that's the isolation. Instrumented calls are served from the record; anything else must be mocked or moved behind `instrumentDb`/recorded HTTP. `RECURR_REPLAY_ALLOW_NET=1` opts out (loudly). |
 | `no record RUN-…` / `404` | Wrong store — check `--store`/`RECURR_STORE`/`.recurr/config.json`. `recurr doctor` shows the resolved spec. |
