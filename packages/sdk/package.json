@@ -1,7 +1,7 @@
 {
   "name": "@recurr/sdk",
   "version": "0.1.0",
-  "description": "Recurr capture & replay SDK for Node.js — records incident execution context and replays it safely",
+  "description": "Recurr capture & replay SDK for Node.js \u2014 records incident execution context and replays it safely",
   "license": "MIT",
   "engines": {
     "node": ">=20"
@@ -48,5 +48,12 @@
     "koa": "^3.2.1",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Ydde21/recurr.git",
+    "directory": "packages/sdk"
+  },
+  "homepage": "https://github.com/Ydde21/recurr#readme",
+  "bugs": "https://github.com/Ydde21/recurr/issues"
 }

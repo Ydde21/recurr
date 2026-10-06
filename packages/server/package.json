@@ -1,7 +1,7 @@
 {
   "name": "@recurr/server",
   "version": "0.1.0",
-  "description": "Recurr collector, query API + developer UI server — ingests execution records and serves the debugging workspace",
+  "description": "Recurr collector, query API + developer UI server \u2014 ingests execution records and serves the debugging workspace",
   "license": "MIT",
   "engines": {
     "node": ">=20"
@@ -47,5 +47,12 @@
     "@types/express": "^4.17.21",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Ydde21/recurr.git",
+    "directory": "packages/server"
+  },
+  "homepage": "https://github.com/Ydde21/recurr#readme",
+  "bugs": "https://github.com/Ydde21/recurr/issues"
 }

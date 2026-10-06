@@ -1,7 +1,7 @@
 {
   "name": "recurr",
   "version": "0.1.0",
-  "description": "Recurr CLI — inspect, replay, diff and regression-test production incidents",
+  "description": "Recurr CLI \u2014 inspect, replay, diff and regression-test production incidents",
   "license": "MIT",
   "engines": {
     "node": ">=20"
@@ -37,5 +37,12 @@
     "@types/node": "^22.10.2",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Ydde21/recurr.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/Ydde21/recurr#readme",
+  "bugs": "https://github.com/Ydde21/recurr/issues"
 }

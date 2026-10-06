@@ -1,7 +1,7 @@
 {
   "name": "@recurr/replay",
   "version": "0.1.0",
-  "description": "Recurr replay engine — reconstructs captured executions in an isolated child process",
+  "description": "Recurr replay engine \u2014 reconstructs captured executions in an isolated child process",
   "license": "MIT",
   "engines": {
     "node": ">=20"
@@ -40,5 +40,12 @@
     "@recurr/sdk": "workspace:*",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Ydde21/recurr.git",
+    "directory": "packages/replay"
+  },
+  "homepage": "https://github.com/Ydde21/recurr#readme",
+  "bugs": "https://github.com/Ydde21/recurr/issues"
 }

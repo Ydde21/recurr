@@ -1,7 +1,7 @@
 {
   "name": "@recurr/store",
   "version": "0.1.0",
-  "description": "Recurr incident storage — filesystem + PostgreSQL backends",
+  "description": "Recurr incident storage \u2014 filesystem + PostgreSQL backends",
   "license": "MIT",
   "engines": {
     "node": ">=20"
@@ -41,5 +41,12 @@
     "@types/pg": "^8.11.10",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Ydde21/recurr.git",
+    "directory": "packages/store"
+  },
+  "homepage": "https://github.com/Ydde21/recurr#readme",
+  "bugs": "https://github.com/Ydde21/recurr/issues"
 }
