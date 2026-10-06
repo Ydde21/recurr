@@ -1,4 +1,11 @@
 import { mkdtemp, rm } from 'node:fs/promises';
+import nodeModule from 'node:module';
+
+// Replay children need module.registerHooks (Node ≥ 22.15) for ESM
+// import-boundary isolation — skip these suites where it doesn't exist
+// rather than failing with a loader SyntaxError.
+const REPLAY_HOOKS = typeof nodeModule.registerHooks === 'function';
+
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -43,7 +50,7 @@ function incident(id: string): ExecutionRecord {
   };
 }
 
-describe('replay lifecycle', () => {
+describe.skipIf(!REPLAY_HOOKS)('replay lifecycle', () => {
   it('target that never announces ready → READY_TIMEOUT with stderr tail', async () => {
     const { store, spec } = await freshStore();
     await store.save(incident('RUN-LIFE1'));

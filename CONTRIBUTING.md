@@ -1,7 +1,8 @@
 # Contributing to Recurr
 
 Thanks for digging in. Recurr is a pnpm + Turbo monorepo in strict TypeScript
-(ESM, NodeNext). Requirements: **Node ≥ 20**, **pnpm 9.x** (`corepack enable`
+(ESM, NodeNext). Requirements: **Node ≥ 20** (replay-spawning suites
+self-skip below 22.15 — `registerHooks` didn't exist yet), **pnpm 9.x** (`corepack enable`
 or `npm i -g pnpm@9`).
 
 ## Setup

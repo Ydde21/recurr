@@ -1,4 +1,11 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import nodeModule from 'node:module';
+
+// Replay children need module.registerHooks (Node ≥ 22.15) for ESM
+// import-boundary isolation — skip these suites where it doesn't exist
+// rather than failing with a loader SyntaxError.
+const REPLAY_HOOKS = typeof nodeModule.registerHooks === 'function';
+
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -81,7 +88,7 @@ afterAll(async () => {
   await rm(tmp, { recursive: true, force: true });
 });
 
-describe('e2e capture → replay → diff', () => {
+describe.skipIf(!REPLAY_HOOKS)('e2e capture → replay → diff', () => {
   it('captured a rich incident record', async () => {
     const rec = await store.get(incidentId);
     expect(rec).not.toBeNull();

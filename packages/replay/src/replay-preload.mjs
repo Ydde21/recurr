@@ -20,7 +20,12 @@
  * No-op outside `RECURR_MODE=replay`, or when the documented escape hatch
  * RECURR_REPLAY_ALLOW_NET=1 disables isolation.
  */
-import { registerHooks } from 'node:module';
+import nodeModule from 'node:module';
+
+// registerHooks landed in Node 22.15 — a named import would SyntaxError at
+// link time on older runtimes before we can say anything useful. Default
+// import + feature check lets the preload deliver a clear refusal instead.
+const registerHooks = nodeModule.registerHooks;
 
 const BLOCKED = new Set([
   'child_process',
@@ -68,6 +73,13 @@ if (process.env.RECURR_MODE === 'replay') {
 }
 
 if (process.env.RECURR_MODE === 'replay' && process.env.RECURR_REPLAY_ALLOW_NET !== '1') {
+  if (typeof registerHooks !== 'function') {
+    // Without module-load hooks the ESM named-import escape path stays open —
+    // refuse to run an incompletely isolated replay rather than degrade it.
+    throw new Error(
+      '[recurr] replay requires Node >= 22.15 (module.registerHooks) — capture works on Node 20, replay does not',
+    );
+  }
   registerHooks({
     resolve(specifier, context, next) {
       if (BLOCKED.has(specifier)) {

@@ -1,4 +1,11 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import nodeModule from 'node:module';
+
+// Replay children need module.registerHooks (Node ≥ 22.15) for ESM
+// import-boundary isolation — skip these suites where it doesn't exist
+// rather than failing with a loader SyntaxError.
+const REPLAY_HOOKS = typeof nodeModule.registerHooks === 'function';
+
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -62,7 +69,7 @@ async function captureOnce(fixture: string): Promise<{ storeSpec: string; id: st
   }
 }
 
-describe('replay isolation — hostile application patterns', () => {
+describe.skipIf(!REPLAY_HOOKS)('replay isolation — hostile application patterns', () => {
   it(
     'blocks every network/execution escape while persisting the replay record',
     async () => {

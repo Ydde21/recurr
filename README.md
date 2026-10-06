@@ -283,6 +283,9 @@ materialized snapshot.
 - Capture limits: bodies cap at 64 KiB (`maxBodyBytes`), records at 100k
   events / 1M seed values — over-limit bodies are flagged `truncated`, not
   silently clipped.
+- Capture runs on Node ≥ 20; **replay requires ≥ 22.15**
+  (`module.registerHooks` for ESM import-boundary isolation — older runtimes
+  refuse with a clear error rather than replaying half-isolated).
 - Framework-owned runtimes (Next.js, anything that boot-loads `child_process`/
   `worker_threads`) can *capture* but never *replay* — the module blocklist
   kills the process before `listen()`. Capture-only by design.
