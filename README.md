@@ -292,6 +292,10 @@ materialized snapshot.
 - Replay targets must be a plain-Node entry — `tsx`/`nodemon`/bundled dev
   runners spawn `child_process` internally and hit the same blocklist.
   Compile first (`tsc`, `esbuild --bundle`) and point `-t` at the output.
+  `recurr replay` preflights the target: known launchers and entry files
+  that statically import blocked builtins fail fast with a readable reason;
+  conditional `require()`/`import()` hits warn but proceed.
+  `RECURR_REPLAY_SKIP_PREFLIGHT=1` bypasses (the sandbox still enforces).
 - `init()` warns on stderr when it detects a capture-only runtime
   (framework launcher, blocked module loaded, or Node < 22.15), and
   `recurr.doctor()` returns the same findings programmatically —

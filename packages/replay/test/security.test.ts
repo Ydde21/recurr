@@ -124,6 +124,9 @@ describe.skipIf(!REPLAY_HOOKS)('replay isolation — hostile application pattern
       // The app captured fine (named ESM imports work in capture — patching is
       // only needed at replay). Replaying it must fail at module load, not
       // silently run unguarded code.
+      // Skip preflight — this test asserts the sandbox itself refuses, which is
+      // the guarantee that matters when preflight's shallow scan misses a case.
+      process.env.RECURR_REPLAY_SKIP_PREFLIGHT = '1';
       const err = await replayIncident({
         store,
         storeSpec,
@@ -135,10 +138,14 @@ describe.skipIf(!REPLAY_HOOKS)('replay isolation — hostile application pattern
         },
         timeoutMs: 30_000,
         readyTimeoutMs: 20_000,
-      }).then(
-        () => null,
-        (e) => e as Error & { code?: string },
-      );
+      })
+        .then(
+          () => null,
+          (e) => e as Error & { code?: string },
+        )
+        .finally(() => {
+          delete process.env.RECURR_REPLAY_SKIP_PREFLIGHT;
+        });
 
       expect(err).not.toBeNull();
       expect(err!.name).toBe('ReplayError');

@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { diffExecutions, validateRecord, type DiffReport, type ExecutionRecord } from '@recurr-dev/core';
 import type { IncidentStore } from '@recurr-dev/store';
+import { preflightTarget } from './preflight.js';
 
 export interface ReplayTarget {
   /** Command to launch the app, e.g. "node dist/index.js" or an argv array. */
@@ -32,7 +33,7 @@ export interface ReplayResult {
 export class ReplayError extends Error {
   constructor(
     message: string,
-    readonly code: 'NOT_FOUND' | 'READY_TIMEOUT' | 'TARGET_EXIT' | 'TIMEOUT' | 'NO_RECORD' | 'BAD_ARGS',
+    readonly code: 'NOT_FOUND' | 'READY_TIMEOUT' | 'TARGET_EXIT' | 'TIMEOUT' | 'NO_RECORD' | 'BAD_ARGS' | 'UNREPLAYABLE_TARGET',
   ) {
     super(message);
     this.name = 'ReplayError';
@@ -162,6 +163,23 @@ export async function replayIncident(opts: ReplayOptions): Promise<ReplayResult>
   if (!Number.isFinite(readyTimeoutMs) || readyTimeoutMs <= 0) throw new ReplayError(`invalid readyTimeoutMs: ${opts.readyTimeoutMs}`, 'BAD_ARGS');
   const [cmd, args] = parseCommand(opts.target.command);
 
+  // Preflight: fail fast on targets the sandbox can never boot (framework/dev
+  // launchers, entry files statically importing blocked builtins) instead of
+  // dying ~20s in with a loader error. Escape hatch: RECURR_REPLAY_SKIP_PREFLIGHT=1.
+  if (process.env.RECURR_REPLAY_SKIP_PREFLIGHT !== '1') {
+    const pre = preflightTarget([cmd, ...args], opts.target.cwd ?? process.cwd());
+    for (const p of pre.problems) {
+      if (p.severity === 'warn') log(`preflight warning: ${p.detail}`);
+    }
+    const fatal = pre.problems.find((p) => p.severity === 'fatal');
+    if (fatal) {
+      throw new ReplayError(
+        `unreplayable target — ${fatal.detail} (RECURR_REPLAY_SKIP_PREFLIGHT=1 to bypass)`,
+        'UNREPLAYABLE_TARGET',
+      );
+    }
+  }
+
   // target.env is developer-supplied — apply it after sanitization, minus the
   // keys that would switch the sandbox off.
   const targetEnv: Record<string, string> = {};
@@ -279,7 +297,16 @@ function waitForMessage(child: ChildProcess, type: string, timeoutMs: number, ta
     };
     const onExit = (code: number | null, signal: string | null) => {
       cleanup();
-      reject(new ReplayError(`target exited (${code ?? signal}) while waiting for ${type}${tail()}`, 'TARGET_EXIT'));
+      const out = tail();
+      const blocked = out.match(/blocked import of '([^']+)'/);
+      reject(
+        new ReplayError(
+          blocked
+            ? `target needs '${blocked[1]}' — the sandbox blocks it, so this process can never replay (capture-only runtime — see Known limitations)${out}`
+            : `target exited (${code ?? signal}) while waiting for ${type}${out}`,
+          'TARGET_EXIT',
+        ),
+      );
     };
     const onError = (err: Error) => {
       cleanup();
