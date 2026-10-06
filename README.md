@@ -292,6 +292,14 @@ materialized snapshot.
 - Replay targets must be a plain-Node entry — `tsx`/`nodemon`/bundled dev
   runners spawn `child_process` internally and hit the same blocklist.
   Compile first (`tsc`, `esbuild --bundle`) and point `-t` at the output.
+- `init()` warns on stderr when it detects a capture-only runtime
+  (framework launcher, blocked module loaded, or Node < 22.15), and
+  `recurr.doctor()` returns the same findings programmatically —
+  `{ replayable, findings: [{ code, detail, remediation }] }`. Silence with
+  `init({ doctor: { warn: false } })`. Detection is heuristic at the edges:
+  a *static* `import 'node:child_process'` alongside the SDK can't be
+  attributed to either side, so a runtime that slips past doctor can still
+  be refused at replay — that refusal is authoritative.
 
 ## Troubleshooting
 

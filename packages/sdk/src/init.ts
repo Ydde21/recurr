@@ -2,6 +2,7 @@ import { createRedactor } from '@recurr-dev/core';
 import { openStore, type IncidentStore } from '@recurr-dev/store';
 import { als, pushEvent } from './context.js';
 import { envConfig, type RecurrConfig } from './config.js';
+import { checkRuntime, type DoctorReport } from './doctor.js';
 import { createErrorMiddleware, createMiddleware } from './middleware.js';
 import { instrumentDb, type Queryable } from './patches/db.js';
 import { installDeterminism } from './patches/determinism.js';
@@ -29,6 +30,11 @@ export interface Recurr {
   recordEvent(name: string, data?: Record<string, unknown>, kind?: 'custom' | 'retry' | 'log'): void;
   /** True while this process is replaying an incident. */
   isReplay(): boolean;
+  /**
+   * Inspect this runtime: whether it could ever serve as a replay target
+   * (framework/dev-tool entries that own blocked builtins are capture-only).
+   */
+  doctor(): DoctorReport;
   /** Drain in-flight record saves (await before shutdown in tests/short-lived procs). */
   flush(): Promise<void>;
   readonly store: IncidentStore;
@@ -67,6 +73,11 @@ export async function init(config: RecurrConfig): Promise<Recurr> {
         }
       }
       throw err;
+    }
+  } else if (env.mode === 'capture' && config.doctor?.warn !== false) {
+    const report = checkRuntime();
+    for (const f of report.findings) {
+      console.error(`[recurr] doctor: ${f.detail} — ${f.remediation}`);
     }
   }
 
@@ -120,6 +131,10 @@ class RecurrHandle implements Recurr {
 
   isReplay(): boolean {
     return this.state.mode === 'replay';
+  }
+
+  doctor(): DoctorReport {
+    return checkRuntime();
   }
 
   async flush(): Promise<void> {

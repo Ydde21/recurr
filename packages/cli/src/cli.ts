@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { promises as fs, readFileSync } from 'node:fs';
+import nodeModule from 'node:module';
 import path from 'node:path';
 import { Command } from 'commander';
 import { diffExecutions, validateRecord, type RegressionScenario } from '@recurr-dev/core';
@@ -404,7 +405,16 @@ program
       if (!pass) ok = false;
     };
 
-    check('node >= 20', Number(process.versions.node.split('.')[0]) >= 20, process.version);
+    check('node >= 20 (capture)', Number(process.versions.node.split('.')[0]) >= 20, process.version);
+    {
+      // Informational, not a failure — replay isolation needs registerHooks.
+      const rh = (nodeModule as { registerHooks?: unknown }).registerHooks;
+      out(
+        typeof rh === 'function'
+          ? `${green('✓')} replay isolation available ${dim('(module.registerHooks)')}`
+          : `${yellow('!')} replay needs node >= 22.15 ${dim(`— this is ${process.version}; capture still works`)}`,
+      );
+    }
     check('config file', !!(await fs.stat(CONFIG_FILE).then(() => true).catch(() => false)), CONFIG_FILE);
     try {
       await store.list({ limit: 1 });

@@ -27,6 +27,8 @@ export interface RecurrConfig {
   store?: IncidentStore | string;
   capture?: CaptureOptions;
   redaction?: RedactionConfig;
+  /** Runtime diagnostics. `warn: false` silences the capture-only-runtime notice at init. */
+  doctor?: { warn?: boolean };
   /** Arbitrary labels attached to every record. */
   labels?: Record<string, string>;
 }
