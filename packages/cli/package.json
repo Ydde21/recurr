@@ -1,6 +1,6 @@
 {
   "name": "@recurr-dev/cli",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Recurr CLI \u2014 inspect, replay, diff and regression-test production incidents",
   "license": "MIT",
   "engines": {
