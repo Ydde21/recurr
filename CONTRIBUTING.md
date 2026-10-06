@@ -96,8 +96,11 @@ done
 #    (edit every package.json "version" — no release bot yet)
 
 # 4. publish — pnpm rewrites workspace:* → pinned versions.
+#    NEVER plain `npm publish` — it ships workspace:* verbatim, producing
+#    uninstallable packages (this burned replay@0.1.2 / cli@0.1.3).
 #    --provenance attaches a Sigstore supply-chain attestation linking each
-#    tarball to the build (requires publishing from a public repo + id-token).
+#    tarball to the build (requires publishing from CI with an OIDC
+#    id-token — it fails locally; drop it for local publishes).
 pnpm -r publish --no-git-checks --provenance
 
 # 5. docker image: tag pushes publish ghcr.io/ydde21/recurr-server
