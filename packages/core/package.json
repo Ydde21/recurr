@@ -1,6 +1,6 @@
 {
   "name": "@recurr-dev/core",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Recurr incident record schema, redaction, and execution diff engine",
   "license": "MIT",
   "engines": {

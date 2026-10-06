@@ -35,7 +35,7 @@ const BLOCKED = new Set([
 
 /** The SDK itself legitimately imports these modules to patch their exports —
  *  exempt its own files so instrumentation still installs. */
-const SDK_PATH = /\/(@recurr\/sdk|packages\/sdk)\//;
+const SDK_PATH = /\/(@recurr-dev\/sdk|packages\/sdk)\//;
 
 if (process.env.RECURR_MODE === 'replay') {
   // If the orchestrator dies (even SIGKILL, which skips its exit handlers),

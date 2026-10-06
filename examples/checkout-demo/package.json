@@ -1,8 +1,8 @@
 {
   "name": "@recurr-dev/checkout-demo",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
-  "description": "Demo app for Recurr — a checkout-api with a reproducible payment-timeout bug",
+  "description": "Demo app for Recurr \u2014 a checkout-api with a reproducible payment-timeout bug",
   "license": "MIT",
   "type": "module",
   "scripts": {

@@ -71,13 +71,13 @@ touching `sdk`/`replay`/`store`. The short version:
 ## Releasing (maintainers)
 
 All publishable packages carry `publishConfig.access: public` and are
-versioned in lockstep — currently `0.1.0`, which is honest for the first
+versioned in lockstep — currently `0.1.1`, which is honest for the first
 public release (pre-1.0 signals the API may evolve). `pnpm pack`/`publish`
 rewrites `workspace:*` deps to the real version — verified via tarball
 inspection.
 
 Prerequisites (not in the repo): push access to the git remote, an npm
-account with publish rights to the `@recurr` scope (or create the org), and
+account with publish rights to the `@recurr-dev` scope (or create the org), and
 `npm login`.
 
 ```bash

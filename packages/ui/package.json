@@ -1,8 +1,8 @@
 {
   "name": "@recurr-dev/ui",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
-  "description": "Recurr developer UI — incident inspection, replay, and diff workspace",
+  "description": "Recurr developer UI \u2014 incident inspection, replay, and diff workspace",
   "license": "MIT",
   "type": "module",
   "scripts": {
