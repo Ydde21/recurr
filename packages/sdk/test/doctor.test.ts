@@ -20,12 +20,14 @@ describe('checkRuntime', () => {
     }
   });
 
-  it('flags a process that already loaded child_process', async () => {
+  it('flags a process that loaded a blocked builtin (cluster, post-init)', async () => {
+    // cluster never ships in the SDK graph — any appearance is host activity.
+    // Works on Node 20 too: the baseline check doesn't need registerHooks.
     const require = createRequire(import.meta.url);
-    require('node:child_process');
+    require('node:cluster');
     const report = checkRuntime();
     expect(report.replayable).toBe(false);
-    expect(report.findings.some((f) => f.code === 'blocked-module-loaded' && f.detail.includes('child_process'))).toBe(true);
+    expect(report.findings.some((f) => f.code === 'blocked-module-loaded' && f.detail.includes('cluster'))).toBe(true);
   });
 
   it('findings always carry a remediation', () => {
