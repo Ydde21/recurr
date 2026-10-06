@@ -48,7 +48,7 @@
     "fastify": "^5.12.5",
     "hono": "^4.9.0",
     "koa": "^3.2.1",
-    "typescript": "^5.7.2",
+    "typescript": "^7.0.2",
     "vitest": "^2.1.8"
   },
   "repository": {
