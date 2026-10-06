@@ -1,7 +1,7 @@
 {
   "name": "@recurr-dev/sdk",
   "version": "0.1.1",
-  "description": "Recurr capture & replay SDK for Node.js \u2014 records incident execution context and replays it safely",
+  "description": "Recurr capture & replay SDK for Node.js — records incident execution context and replays it safely",
   "license": "MIT",
   "engines": {
     "node": ">=20"
@@ -40,11 +40,13 @@
   },
   "devDependencies": {
     "@fastify/middie": "^9.3.4",
+    "@hono/node-server": "^1.14.4",
     "@types/express": "^4.17.21",
     "@types/node": "^22.10.2",
     "@types/pg": "^8.11.10",
     "express": "^4.21.2",
     "fastify": "^5.12.5",
+    "hono": "^4.9.0",
     "koa": "^3.2.1",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"

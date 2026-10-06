@@ -114,6 +114,10 @@ describe('e2e capture → replay → diff', () => {
     expect(observedStatus).toBe(500);
     expect(replay.response?.status).toBe(500);
     expect(replay.error?.name).toBe('PaymentConfirmationTimeout');
+    // The route sits behind authMiddleware — the bearer credential was
+    // redacted, so reaching the handler proves recurr.auth() served the
+    // captured principal (a 401 here would mean auth replay regressed).
+    expect(replay.response?.status).not.toBe(401);
     expect(report.outcomeMatch).toBe(true);
     // payment API was mocked — replay ran in ms not the original ~2.4s
     expect(replay.response!.durationMs).toBeLessThan(5000);

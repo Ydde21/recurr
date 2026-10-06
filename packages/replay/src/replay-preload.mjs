@@ -33,9 +33,33 @@ const BLOCKED = new Set([
   'node:cluster',
 ]);
 
-/** The SDK itself legitimately imports these modules to patch their exports —
- *  exempt its own files so instrumentation still installs. */
-const SDK_PATH = /\/(@recurr-dev\/sdk|packages\/sdk)\//;
+/** Our own packages legitimately import these modules to patch their
+ *  exports — exempt them so instrumentation still installs.
+ *
+ *  Derive the scope root from THIS file's URL — <scope>/replay/dist/
+ *  replay-preload.mjs → <scope>/ (node_modules/@recurr-dev/ when installed,
+ *  packages/ in the monorepo). Matching the directory prefix rather than a
+ *  hardcoded package name means a scope rename or a nested-install layout
+ *  (pnpm store, file: links under the scope dir) can't silently break the
+ *  exemption — the failure mode that shipped broken 0.1.0 artifacts. */
+// The SDK is the ONLY package that legitimately imports blocked modules (to
+// patch their exports) — the exemption must cover exactly its tree, never a
+// wider scope dir (a hostile file placed under it would inherit the pass).
+// Derive its root from this file's URL — <scope>/replay/dist/… → <scope>/sdk/
+// — so the repo layout needs no hardcoded name. The published-path regex
+// covers consumer node_modules where this preload resolves from a different
+// tree (e.g. workspace-built CLI + npm-installed SDK); a scope rename must
+// update it, and pack-smoke exercises that path so a stale name fails loudly.
+const SDK_ROOT = new URL('../../sdk/', import.meta.url).href;
+const PUBLISHED_SDK = /\/@recurr-dev\/sdk\//;
+
+function isOwnCode(parentURL) {
+  return (
+    parentURL.startsWith('node:') ||
+    parentURL.startsWith(SDK_ROOT) ||
+    PUBLISHED_SDK.test(parentURL)
+  );
+}
 
 if (process.env.RECURR_MODE === 'replay') {
   // If the orchestrator dies (even SIGKILL, which skips its exit handlers),
@@ -47,8 +71,7 @@ if (process.env.RECURR_MODE === 'replay' && process.env.RECURR_REPLAY_ALLOW_NET 
   registerHooks({
     resolve(specifier, context, next) {
       if (BLOCKED.has(specifier)) {
-        const parent = context.parentURL ?? '';
-        if (!parent.startsWith('node:') && !SDK_PATH.test(parent)) {
+        if (!isOwnCode(context.parentURL ?? '')) {
           throw new Error(
             `[recurr] replay isolation: blocked import of '${specifier}' — replays may not load egress-capable modules`,
           );

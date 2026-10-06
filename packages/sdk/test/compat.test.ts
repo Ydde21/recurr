@@ -25,7 +25,11 @@ import type { Queryable } from '../src/patches/db.js';
  *                        req.body NOT populated; error detail uncaptured
  *   node:http raw      — capture works by calling the middleware manually;
  *                        no body parsing; thrown handlers → aborted records
- *   hono / fetch-style — UNSUPPORTED: no (req,res,next) mount point exists
+ *   hono (node-server) — capture works via server-boundary wrap:
+ *                        getRequestListener(app.fetch) inside createServer,
+ *                        middleware ahead of the adapter (verified against a
+ *                        real Hono API during dogfooding)
+ *   fetch-style/edge   — UNSUPPORTED: no node req/res boundary to intercept
  */
 
 const dirs: string[] = [];
@@ -190,6 +194,42 @@ describe('framework compatibility', () => {
     const recs = await captured(storeDir);
     expect(recs.length).toBe(1);
     expectIncidentShape(recs[0], '/raw');
+    server.closeAllConnections?.();
+    server.close();
+    fx.upstream.close();
+  });
+
+  it('hono via @hono/node-server — capture works through the server-boundary wrap', async () => {
+    const { Hono } = await import('hono');
+    const { getRequestListener } = await import('@hono/node-server');
+    const storeDir = await tmpDir();
+    const recurr = await init({ service: 'svc-hono', store: `fs:${storeDir}`, capture: { on: 'always' } });
+    const fx = await exercise(recurr);
+    const mw = recurr.middleware() as Mw;
+
+    const app = new Hono();
+    app.get('/conv', async (c) => {
+      await fx.db.query('SELECT 1');
+      const r = await fetch(fx.upstreamUrl);
+      await r.json();
+      return c.json({ ok: true });
+    });
+
+    // The documented integration: wrap hono's node adapter at the socket
+    // boundary — middleware sees the real req/res before adaptation.
+    const listener = getRequestListener(app.fetch);
+    const server = http.createServer((req, res) => {
+      mw(req, res, () => void listener(req, res));
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const port = (server.address() as { port: number }).port;
+    const res = await fetch(`http://127.0.0.1:${port}/conv`);
+    expect(res.status).toBe(200);
+    await recurr.flush();
+    const recs = await captured(storeDir);
+    expect(recs.length).toBe(1);
+    expectIncidentShape(recs[0], '/conv');
+    expect(JSON.parse(recs[0].response!.body!)).toEqual({ ok: true });
     server.closeAllConnections?.();
     server.close();
     fx.upstream.close();

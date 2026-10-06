@@ -112,7 +112,13 @@ export function printDiffReport(report: DiffReport, out: (s: string) => void): v
   } else {
     out(`outcome   ${yellow('diverged')} — same status, different error path`);
   }
-  out(`match     ${report.matchScore}%`);
+  // "reproduced + low score" reads contradictory at a glance — the score
+  // honestly counts field-level divergences too; say so inline.
+  const note =
+    report.outcomeMatch && report.matchScore < 100 && report.divergences.length > 0
+      ? dim(` (${report.divergences.length} divergence${report.divergences.length === 1 ? '' : 's'} below — outcome still reproduced)`)
+      : '';
+  out(`match     ${report.matchScore}%${note}`);
   const s = report.stats;
   out(`events    ${s.matched} matched · ${s.missing} missing · ${s.extra} extra · ${s.eventsWithMismatch} mismatched`);
   out(`timing    original ${fmtMs(report.timing.originalMs)} → replay ${fmtMs(report.timing.replayMs)} (${report.timing.driftPct >= 0 ? '+' : ''}${report.timing.driftPct}%)`);

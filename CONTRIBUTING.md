@@ -94,10 +94,14 @@ done
 # 3. bump versions together, commit, tag
 #    (edit every package.json "version" — no release bot yet)
 
-# 4. publish — pnpm rewrites workspace:* → pinned versions
-pnpm -r publish --no-git-checks
+# 4. publish — pnpm rewrites workspace:* → pinned versions.
+#    --provenance attaches a Sigstore supply-chain attestation linking each
+#    tarball to the build (requires publishing from a public repo + id-token).
+pnpm -r publish --no-git-checks --provenance
 
-# 5. docker image: docker compose build && docker compose up -d
+# 5. docker image: tag pushes publish ghcr.io/ydde21/recurr-server
+#    automatically (.github/workflows/docker.yml) — `git tag v*` && push.
+#    Manual fallback: docker compose build && docker compose up -d
 ```
 
 The CLI publishes as `@recurr-dev/cli` (the unscoped `recurr` name was already
