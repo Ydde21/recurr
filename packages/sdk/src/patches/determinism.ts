@@ -88,7 +88,7 @@ export function installDeterminism(): void {
   // divergence note rather than silently producing real entropy.
   const origGRV = crypto.getRandomValues?.bind(crypto);
   if (origGRV) {
-    (crypto as { getRandomValues?: (a: Uint8Array) => Uint8Array }).getRandomValues = ((arr: Uint8Array) => {
+    (crypto as { getRandomValues?: unknown }).getRandomValues = ((arr: Uint8Array) => {
       const ctx = als.getStore();
       if (ctx?.mode === 'replay' && !ctx.bookkeeping) {
         replayNote(ctx, 'crypto.getRandomValues used at replay — value is PRNG-derived, not the captured original', undefined, 'getRandomValues-unrecorded');
@@ -97,7 +97,7 @@ export function installDeterminism(): void {
         return arr;
       }
       return origGRV(arr as never) as never;
-    }) as typeof crypto.getRandomValues;
+    });
   }
 
   try {
