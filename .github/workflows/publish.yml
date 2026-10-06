@@ -1,0 +1,54 @@
+name: Publish
+
+on:
+  push:
+    tags: ['v*']
+
+# id-token: write is what makes `pnpm publish --provenance` work — GitHub
+# mints an OIDC token npm uses to attest the artifact to this repo+commit.
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        # version comes from package.json "packageManager"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          registry-url: https://registry.npmjs.org/
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      # Dependency order: dependents must publish after the versions they
+      # reference so workspace:* rewrites resolve to real registry versions.
+      # `pnpm pack` rewrites workspace:* → concrete versions; `npm publish`
+      # on the resulting tarball carries --provenance (pnpm publish doesn't
+      # support the flag on pnpm 9).
+      # Packages whose version already exists on npm are skipped — tag-releases
+      # can carry a subset of bumps.
+      - name: Publish packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -e
+          for pkg in core store replay sdk server cli; do
+            dir="packages/$pkg"
+            name="$(node -p "require('./$dir/package.json').name")"
+            ver="$(node -p "require('./$dir/package.json').version")"
+            if npm view "$name@$ver" version >/dev/null 2>&1; then
+              echo "skip $name@$ver (already published)"
+              continue
+            fi
+            echo "publishing $name@$ver"
+            tgz="$(cd "$dir" && pnpm pack 2>/dev/null | tail -1)"
+            npm publish "$dir/$tgz" --access public --provenance
+          done

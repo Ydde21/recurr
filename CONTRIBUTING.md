@@ -95,16 +95,17 @@ done
 # 3. bump versions together, commit, tag
 #    (edit every package.json "version" — no release bot yet)
 
-# 4. publish — pnpm rewrites workspace:* → pinned versions.
-#    NEVER plain `npm publish` — it ships workspace:* verbatim, producing
-#    uninstallable packages (this burned replay@0.1.2 / cli@0.1.3).
-#    --provenance attaches a Sigstore supply-chain attestation linking each
-#    tarball to the build (requires publishing from CI with an OIDC
-#    id-token — it fails locally; drop it for local publishes).
-pnpm -r publish --no-git-checks --provenance
+# 4. push the tag — .github/workflows/publish.yml publishes every package
+#    whose version isn't on npm yet, in dependency order, with --provenance
+#    (Sigstore attestation tying each tarball to the exact commit; requires
+#    the workflow's OIDC id-token — can't be reproduced locally).
+#    Requires the NPM_TOKEN repo secret (classic token, publish-capable,
+#    2FA-bypass for CI). To publish locally instead, `pnpm pack` then
+#    `npm publish <tgz>` per package in dependency order.
+git tag vX.Y.Z && git push origin vX.Y.Z
 
-# 5. docker image: tag pushes publish ghcr.io/ydde21/recurr-server
-#    automatically (.github/workflows/docker.yml) — `git tag v*` && push.
+# 5. docker image: the same tag also fires docker.yml →
+#    ghcr.io/ydde21/recurr-server:<version> — `git tag v*` && push.
 #    Manual fallback: docker compose build && docker compose up -d
 ```
 
