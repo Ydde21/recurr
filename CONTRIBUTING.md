@@ -71,7 +71,8 @@ touching `sdk`/`replay`/`store`. The short version:
 ## Releasing (maintainers)
 
 All publishable packages carry `publishConfig.access: public` and are
-versioned in lockstep — currently `0.1.1`, which is honest for the first
+versioned in lockstep — currently `0.1.x` (`@recurr-dev/cli` is a patch ahead
+at 0.1.2 for a `--version` fix), which is honest for the first
 public release (pre-1.0 signals the API may evolve). `pnpm pack`/`publish`
 rewrites `workspace:*` deps to the real version — verified via tarball
 inspection.

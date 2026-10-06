@@ -46,7 +46,10 @@ NodeNext). Name is "Recurr" — packages `@recurr-dev/*`, CLI binary `recurr`.
 - CI: `.github/workflows/ci.yml` — node from `.nvmrc`, `pnpm install
   --frozen-lockfile` → `pnpm build` → `pnpm test`; pg job runs
   `@recurr-dev/store` tests against a services-container postgres (opt-in
-  locally, isolated in CI).
+  locally, isolated in CI); `pack-smoke` job runs `node scripts/pack-smoke.mjs`
+  — packs all publishable packages, npm-installs the tarballs into a bare
+  project, and verifies capture→replay under the real npm layout (catches
+  packaging-only bugs like path-regex scope exemptions).
 - Unit: `packages/*/test/*.test.ts` (vitest).
 - Compat: `packages/sdk/test/compat.test.ts` — express/fastify+middie/koa
   adapter/raw node:http (Hono/fetch-style: unsupported, documented in README).

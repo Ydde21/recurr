@@ -60,3 +60,19 @@ jobs:
       # built in topological order — filtered build alone misses core's dist/.
       - run: pnpm --filter @recurr-dev/store... build
       - run: pnpm --filter @recurr-dev/store test
+
+  # Packaged-layout smoke test — catches bugs that only appear under a real
+  # npm install (e.g. the replay preload's scope-regex exemption), which
+  # workspace-linked tests can't see.
+  pack-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: node scripts/pack-smoke.mjs
