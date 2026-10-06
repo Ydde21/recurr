@@ -1,5 +1,5 @@
 {
-  "name": "recurr",
+  "name": "@recurr/cli",
   "version": "0.1.0",
   "description": "Recurr CLI \u2014 inspect, replay, diff and regression-test production incidents",
   "license": "MIT",
@@ -44,5 +44,8 @@
     "directory": "packages/cli"
   },
   "homepage": "https://github.com/Ydde21/recurr#readme",
-  "bugs": "https://github.com/Ydde21/recurr/issues"
+  "bugs": "https://github.com/Ydde21/recurr/issues",
+  "publishConfig": {
+    "access": "public"
+  }
 }

@@ -27,7 +27,7 @@ PgStore integration tests are opt-in:
 | `packages/replay` | Replay orchestrator — spawn, isolate, inject, collect, diff |
 | `packages/server` | Collector + query API (`recurr-server`) + UI host |
 | `packages/ui` | React+Vite developer UI (incident → replay → diff → regression) |
-| `packages/cli` | `recurr` CLI |
+| `packages/cli` | `@recurr/cli` — the `recurr` binary |
 | `examples/checkout-demo` | End-to-end demo app with an intentional bug |
 
 ## Development workflow
@@ -99,6 +99,7 @@ pnpm -r publish --no-git-checks
 # 5. docker image: docker compose build && docker compose up -d
 ```
 
-The CLI package (`recurr`, unscoped) doesn't need `publishConfig` — npm
-treats unscoped names as public by default. `@recurr/ui` is `private` and
-ships inside `@recurr/server`/`Dockerfile.server`, not to npm.
+The CLI publishes as `@recurr/cli` (the unscoped `recurr` name was already
+taken on npm by an unrelated package); the installed binary is still `recurr`.
+`@recurr/ui` is `private` and ships inside `@recurr/server`/`Dockerfile.server`,
+not to npm.

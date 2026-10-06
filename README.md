@@ -64,7 +64,7 @@ Once published to npm:
 
 ```bash
 npm install @recurr/sdk        # the capture/replay SDK (in your service)
-npm install -g recurr          # the CLI
+npm install -g @recurr/cli     # the CLI — installs the `recurr` binary
 npm install -g @recurr/server  # optional: collector + browser UI
 ```
 
