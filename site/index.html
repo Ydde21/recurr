@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Recurr — production incident capture &amp; deterministic replay</title>
+<meta name="description" content="Recurr converts real production failures into replayable incident records: capture once, replay deterministically on your machine, diff, and verify the fix.">
+<meta property="og:title" content="Recurr — replay production incidents deterministically">
+<meta property="og:description" content="Capture once in production. Replay deterministically on your machine. Diff, fix, verify.">
+<style>
+  :root {
+    --bg: #0c0d10; --surface: #14161b; --line: #23262e;
+    --text: #e6e8ec; --muted: #8b919c; --accent: #7ee787; --accent2: #79b8ff;
+    --warn: #f2cc60;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 16px/1.6 -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 880px; margin: 0 auto; padding: 64px 24px 96px; }
+  nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 72px; font-size: 14px; }
+  nav .logo { font-weight: 700; font-family: ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: -0.02em; }
+  nav a { color: var(--muted); text-decoration: none; margin-left: 20px; }
+  nav a:hover { color: var(--text); }
+  h1 { font-size: clamp(2rem, 5vw, 3.2rem); line-height: 1.15; letter-spacing: -0.03em; font-weight: 700; }
+  h1 .accent { color: var(--accent); }
+  .lede { color: var(--muted); font-size: 1.15rem; margin-top: 20px; max-width: 640px; }
+  .pill { display: inline-block; font: 12px/1 ui-monospace, Menlo, monospace; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; margin-bottom: 24px; }
+  section { margin-top: 72px; }
+  h2 { font-size: 1.35rem; letter-spacing: -0.02em; margin-bottom: 20px; }
+  .term { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; font: 14px/1.7 ui-monospace, "SF Mono", Menlo, monospace; overflow-x: auto; white-space: pre; }
+  .term .c { color: var(--muted); }
+  .term .g { color: var(--accent); }
+  .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .step { background: var(--surface); padding: 18px; }
+  .step b { display: block; font: 13px/1.4 ui-monospace, Menlo, monospace; color: var(--accent2); margin-bottom: 6px; }
+  .step span { font-size: 13.5px; color: var(--muted); line-height: 1.5; }
+  ul.feat { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px 32px; }
+  ul.feat li { padding-left: 22px; position: relative; font-size: 15px; color: var(--muted); }
+  ul.feat li b { color: var(--text); font-weight: 600; }
+  ul.feat li::before { content: "▸"; position: absolute; left: 0; color: var(--accent); }
+  .limits { border: 1px solid var(--warn); border-radius: 10px; padding: 20px 24px; font-size: 14.5px; color: var(--muted); }
+  .limits b { color: var(--warn); }
+  .limits li { margin: 6px 0 6px 16px; }
+  .gif { width: 100%; border: 1px solid var(--line); border-radius: 10px; margin-top: 16px; }
+  footer { margin-top: 96px; padding-top: 24px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+  footer a { color: var(--muted); }
+  code.inl { font: 0.9em ui-monospace, Menlo, monospace; background: var(--surface); padding: 2px 6px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<main>
+<nav>
+  <span class="logo">recurr</span>
+  <span>
+    <a href="https://github.com/Ydde21/recurr">GitHub</a>
+    <a href="https://www.npmjs.com/org/recurr-dev">npm</a>
+    <a href="https://github.com/Ydde21/recurr/pkgs/container/recurr-server">docker</a>
+  </span>
+</nav>
+
+<span class="pill">open source · MIT · Node.js ≥ 20</span>
+<h1>The bug happened in production.<br><span class="accent">Replay it on your machine.</span></h1>
+<p class="lede">Recurr captures real production executions — HTTP in, dependencies out, errors, time — into incident records, then reconstructs and replays them deterministically on your machine. Diff the replay against the original; save the fix as a regression.</p>
+
+<section>
+<div class="term"><span class="c"># instrument once</span>
+npm i @recurr-dev/sdk
+
+<span class="c"># production incident → record → replay → diff</span>
+recurr replay RUN-9F3XK2 --cmd "node dist/index.js"
+<span class="g">✓ outcome reproduced · 1 divergence (remoteAddr)</span></div>
+</section>
+
+<section>
+<h2>How it works</h2>
+<div class="steps">
+  <div class="step"><b>capture</b><span>SDK middleware records the request, outbound calls, db queries, errors — secrets redacted before they hit disk.</span></div>
+  <div class="step"><b>replay</b><span>The CLI re-runs your entrypoint in an isolated process: recorded responses served back, time and randomness pinned to the original.</span></div>
+  <div class="step"><b>diff</b><span>Observed status and side-effects are compared to the recorded incident — divergences reported field by field.</span></div>
+  <div class="step"><b>regression</b><span>Save the incident as a scenario; re-run it after the fix. <code class="inl">fixed: true</code> when the outcome stops matching.</span></div>
+</div>
+<img class="gif" src="https://raw.githubusercontent.com/Ydde21/recurr/main/docs/demo.gif" alt="capture → inspect → replay → diff → regression → fix verified">
+</section>
+
+<section>
+<h2>What's in the box</h2>
+<ul class="feat">
+  <li><b>Capture SDK</b> — express/fastify/koa/raw-node middleware; patches <code class="inl">fetch</code>, <code class="inl">http.request</code>, clock, and PRNG outside the request context.</li>
+  <li><b>Deterministic replay</b> — AsyncLocalStorage-scoped; replay mode forces loopback listeners and serves all instrumented egress from the record. Never dials production.</li>
+  <li><b>Sandboxed child</b> — env sanitizer strips keys/tokens/DSNs/proxies/cloud creds; <code class="inl">child_process</code>, workers, dgram, raw sockets, and native addons are refused at the module boundary.</li>
+  <li><b>Static preflight</b> — unreplayable targets (framework launchers, blocked-builtin imports) fail in milliseconds, before the child spawns.</li>
+  <li><b>recurr doctor</b> — init-time warning when your runtime can capture but never replay; tells you why and what to change.</li>
+  <li><b>Stores</b> — filesystem (<code class="inl">fs:</code>), Postgres (<code class="inl">pg:</code>), or remote collector (<code class="inl">http:</code>) with optional bearer auth.</li>
+  <li><b>CLI + UI</b> — <code class="inl">recurr list/show/replay/diff/regression/doctor</code>, plus a React incident browser served by the collector.</li>
+  <li><b>Docker</b> — <code class="inl">ghcr.io/ydde21/recurr-server</code>, multi-arch, pg-backed compose file included.</li>
+</ul>
+</section>
+
+<section>
+<h2>Honest limits</h2>
+<div class="limits">
+<b>Read before adopting.</b> Replay requires Node ≥ 22.15. Framework-launcher targets (next dev, tsx, vite-node) can't replay — run a plain Node entry or bundle. Fetch-style frameworks (Hono et al.) aren't instrumented yet. Replay is process isolation, not a security sandbox — filesystem stays writable.
+</div>
+</section>
+
+<section>
+<h2>Get started</h2>
+<div class="term"><span class="c"># server + ui (docker)</span>
+docker compose up        <span class="c"># → http://127.0.0.1:4780</span>
+
+<span class="c"># or packages</span>
+npm i @recurr-dev/cli @recurr-dev/sdk
+
+<span class="c"># demo</span>
+git clone https://github.com/Ydde21/recurr &amp;&amp; cd recurr &amp;&amp; pnpm demo</div>
+</section>
+
+<footer>
+  <span>Recurr — MIT licensed</span>
+  <span><a href="https://github.com/Ydde21/recurr">github.com/Ydde21/recurr</a></span>
+</footer>
+</main>
+</body>
+</html>
