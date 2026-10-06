@@ -28,6 +28,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
 
+      # npm ≥ 11.5 supports OIDC trusted publishing (token-free auth once
+      # configured per-package on npmjs.com). The upgrade also makes the
+      # workflow work via NPM_TOKEN secret alone — set whichever exists.
+      - run: npm i -g npm@latest
+
       # Dependency order: dependents must publish after the versions they
       # reference so workspace:* rewrites resolve to real registry versions.
       # `pnpm pack` rewrites workspace:* → concrete versions; `npm publish`
