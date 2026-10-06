@@ -49,8 +49,8 @@ checkout-api (Express, instrumented)  →  POST /api/orders
 Then open the debugging UI:
 
 ```bash
-RECURR_STORE=fs:examples/checkout-demo/.recurr/store recurr-server
-# → http://127.0.0.1:4780
+RECURR_STORE=fs:examples/checkout-demo/.recurr/store node packages/server/dist/bin.js
+# → http://127.0.0.1:4780  (installed globally it's just `recurr-server`)
 ```
 
 Incidents → timeline → event inspector → replay → diff → divergence
@@ -72,8 +72,8 @@ npm install -g @recurr/server  # optional: collector + browser UI
 
 ```bash
 pnpm install && pnpm build
-node packages/cli/dist/cli.js init        # or: pnpm link --global ./packages/cli
-node packages/server/dist/bin.js          # recurr-server
+node packages/cli/dist/cli.js init        # or: npm link packages/cli → `recurr`
+node packages/server/dist/bin.js          # or: npm link packages/server → `recurr-server`
 ```
 
 To use the SDK from an external app before release, link the workspace:

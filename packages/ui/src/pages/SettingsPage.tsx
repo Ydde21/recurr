@@ -10,6 +10,7 @@ const LIMITS: { k: string; v: string }[] = [
   { k: 'capture body limit', v: '64 KiB default (maxBodyBytes) — clipped bodies are flagged in redaction.truncatedPaths' },
   { k: 'events per record', v: '100,000 max' },
   { k: 'seed values', v: '1,000,000 max' },
+  { k: 'api authentication', v: 'none — replay endpoints execute caller-supplied commands; bind localhost or front with an auth proxy' },
   { k: 'replay model', v: 'single-service, child-process isolation — no distributed replay' },
   { k: 'db replay fidelity', v: 'recorded rowsets in order — not a database snapshot' },
   { k: 'filesystem isolation', v: 'not sandboxed — replay untrusted targets only on disposable machines' },

@@ -34,7 +34,8 @@ pnpm demo
 Records land in `.recurr/store` (gitignored). Open the UI against them:
 
 ```bash
-RECURR_STORE=fs:examples/checkout-demo/.recurr/store recurr-server
+# from the repo root (recurr-server if installed globally)
+RECURR_STORE=fs:examples/checkout-demo/.recurr/store node packages/server/dist/bin.js
 # → http://127.0.0.1:4780 — the incident is ready to inspect/replay/diff
 ```
 
