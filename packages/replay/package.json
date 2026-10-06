@@ -1,6 +1,6 @@
 {
   "name": "@recurr-dev/replay",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Recurr replay engine \u2014 reconstructs captured executions in an isolated child process",
   "license": "MIT",
   "engines": {

@@ -1,6 +1,6 @@
 {
   "name": "@recurr-dev/server",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Recurr collector, query API + developer UI server \u2014 ingests execution records and serves the debugging workspace",
   "license": "MIT",
   "engines": {
