@@ -1,5 +1,5 @@
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
-import { init, type Recurr } from '@recurr/sdk';
+import { init, type Recurr } from '@recurr-dev/sdk';
 import { createDb, seed, type Db } from './db.js';
 
 /**

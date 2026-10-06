@@ -1,5 +1,5 @@
 {
-  "name": "@recurr/server",
+  "name": "@recurr-dev/server",
   "version": "0.1.0",
   "description": "Recurr collector, query API + developer UI server \u2014 ingests execution records and serves the debugging workspace",
   "license": "MIT",
@@ -38,9 +38,9 @@
     "start": "node dist/bin.js"
   },
   "dependencies": {
-    "@recurr/core": "workspace:*",
-    "@recurr/replay": "workspace:*",
-    "@recurr/store": "workspace:*",
+    "@recurr-dev/core": "workspace:*",
+    "@recurr-dev/replay": "workspace:*",
+    "@recurr-dev/store": "workspace:*",
     "express": "^4.21.2"
   },
   "devDependencies": {

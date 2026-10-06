@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import type { CapturedAuth, ExecutionRecord, TimelineEvent } from '@recurr/core';
-import type { Redactor } from '@recurr/core';
+import type { CapturedAuth, ExecutionRecord, TimelineEvent } from '@recurr-dev/core';
+import type { Redactor } from '@recurr-dev/core';
 import type { RecurrConfig } from './config.js';
 
 /** Per-execution runtime state, carried through the request via ALS. */

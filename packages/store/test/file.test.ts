@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import type { ExecutionRecord } from '@recurr/core';
+import type { ExecutionRecord } from '@recurr-dev/core';
 import { FileStore } from '../src/file.js';
 import { openStore } from '../src/index.js';
 

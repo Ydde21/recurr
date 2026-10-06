@@ -1,5 +1,5 @@
-import type { RedactionConfig } from '@recurr/core';
-import type { IncidentStore } from '@recurr/store';
+import type { RedactionConfig } from '@recurr-dev/core';
+import type { IncidentStore } from '@recurr-dev/store';
 
 export interface CaptureOptions {
   /** When to persist a record. 'error' = only failures (default), 'always' = every request. */

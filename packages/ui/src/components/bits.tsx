@@ -1,4 +1,4 @@
-import type { EventKind } from '@recurr/core/types';
+import type { EventKind } from '@recurr-dev/core/types';
 import { statusClass } from '../lib/format';
 
 /* Small presentational primitives. */

@@ -2,8 +2,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { ExecutionRecord } from '@recurr/core';
-import { FileStore, HttpStore } from '@recurr/store';
+import type { ExecutionRecord } from '@recurr-dev/core';
+import { FileStore, HttpStore } from '@recurr-dev/store';
 import { createApp } from '../src/app.js';
 
 let tmp: string;

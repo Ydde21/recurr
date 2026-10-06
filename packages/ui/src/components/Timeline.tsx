@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { TimelineEvent } from '@recurr/core/types';
+import type { TimelineEvent } from '@recurr-dev/core/types';
 import { fmtMs } from '../lib/format';
 import { KindDot } from './bits';
 

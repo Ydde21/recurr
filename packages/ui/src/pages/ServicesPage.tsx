@@ -43,7 +43,7 @@ export function ServicesPage() {
         ) : q.error ? (
           <ErrorState error={q.error} onRetry={q.refetch} />
         ) : groups.length === 0 ? (
-          <Empty title="no services" hint="services appear here once @recurr/sdk captures executions" />
+          <Empty title="no services" hint="services appear here once @recurr-dev/sdk captures executions" />
         ) : (
           <table className="tbl">
             <thead>

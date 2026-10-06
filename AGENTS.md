@@ -1,7 +1,7 @@
 # Recurr — agent notes
 
 Production incident replay platform (pnpm + Turbo monorepo, TypeScript ESM,
-NodeNext). Name is "Recurr" — packages `@recurr/*`, CLI binary `recurr`.
+NodeNext). Name is "Recurr" — packages `@recurr-dev/*`, CLI binary `recurr`.
 
 ## Commands
 
@@ -11,7 +11,7 @@ NodeNext). Name is "Recurr" — packages `@recurr/*`, CLI binary `recurr`.
   because the e2e spawns the compiled demo (`examples/checkout-demo/dist`).
 - `pnpm demo` (root) or `node scripts/demo.mjs` in `examples/checkout-demo` —
   full scripted capture→replay→diff→fix-verification walkthrough.
-- `packages/ui` — React+Vite developer UI; `pnpm --filter @recurr/ui dev` for
+- `packages/ui` — React+Vite developer UI; `pnpm --filter @recurr-dev/ui dev` for
   local dev (proxies `/v1`+`/healthz` to :4780). `recurr-server` serves
   `packages/ui/dist` at `/` when built (`RECURR_UI_DIR` overrides).
 
@@ -45,7 +45,7 @@ NodeNext). Name is "Recurr" — packages `@recurr/*`, CLI binary `recurr`.
 
 - CI: `.github/workflows/ci.yml` — node from `.nvmrc`, `pnpm install
   --frozen-lockfile` → `pnpm build` → `pnpm test`; pg job runs
-  `@recurr/store` tests against a services-container postgres (opt-in
+  `@recurr-dev/store` tests against a services-container postgres (opt-in
   locally, isolated in CI).
 - Unit: `packages/*/test/*.test.ts` (vitest).
 - Compat: `packages/sdk/test/compat.test.ts` — express/fastify+middie/koa
@@ -56,6 +56,6 @@ NodeNext). Name is "Recurr" — packages `@recurr/*`, CLI binary `recurr`.
   asserts every escape path is blocked at replay.
 - E2E: `packages/replay/test/e2e.test.ts` — spawns real demo processes.
 - Ports used by tests/demo: 4781/4790 (demo), 14781/14790 (e2e), 4780 (server).
-- PgStore tests are opt-in: `DATABASE_URL=postgres://… pnpm --filter @recurr/store test`.
+- PgStore tests are opt-in: `DATABASE_URL=postgres://… pnpm --filter @recurr-dev/store test`.
 - NOTE: `await import('node:<builtin>')` yields namespace bindings that are
   pre-patch snapshots — use `.default` or `require()` to hit patched exports.

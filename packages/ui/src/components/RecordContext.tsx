@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import type { ExecutionRecord } from '@recurr/core/types';
+import type { ExecutionRecord } from '@recurr-dev/core/types';
 import { fmtBytes, fmtMs, fmtTime } from '../lib/format';
 import { BodyViewer, HeadersTable } from './BodyViewer';
 import { JsonTree } from './JsonTree';

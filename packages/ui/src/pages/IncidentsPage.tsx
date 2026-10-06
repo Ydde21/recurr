@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import type { ExecutionSummary } from '@recurr/core/types';
+import type { ExecutionSummary } from '@recurr-dev/core/types';
 import { api } from '../api';
 import { useApi } from '../hooks';
 import { fmtMs, fmtTimeShort } from '../lib/format';
@@ -146,7 +146,7 @@ export function IncidentsPage({ searchRef }: { searchRef?: React.RefObject<HTMLI
             hint={
               q.data?.length
                 ? 'try widening the search or clearing filters'
-                : 'incidents land here when an instrumented service (@recurr/sdk) hits a failing request — run `pnpm demo` in the recurr repo for a ready-made incident'
+                : 'incidents land here when an instrumented service (@recurr-dev/sdk) hits a failing request — run `pnpm demo` in the recurr repo for a ready-made incident'
             }
           />
         ) : (

@@ -1,6 +1,6 @@
 import http from 'node:http';
 import https from 'node:https';
-import { validateRecord, type ExecutionRecord } from '@recurr/core';
+import { validateRecord, type ExecutionRecord } from '@recurr-dev/core';
 import { setReplayOffset } from './patches/determinism.js';
 import { installReplayIsolation } from './patches/isolation.js';
 import { envConfig } from './config.js';

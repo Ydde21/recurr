@@ -1,5 +1,5 @@
 {
-  "name": "@recurr/store",
+  "name": "@recurr-dev/store",
   "version": "0.1.0",
   "description": "Recurr incident storage \u2014 filesystem + PostgreSQL backends",
   "license": "MIT",
@@ -34,7 +34,7 @@
     "dev": "tsc -p tsconfig.json --watch"
   },
   "dependencies": {
-    "@recurr/core": "workspace:*",
+    "@recurr-dev/core": "workspace:*",
     "pg": "^8.13.1"
   },
   "devDependencies": {

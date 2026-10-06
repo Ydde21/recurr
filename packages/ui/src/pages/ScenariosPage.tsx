@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import type { RegressionScenario } from '@recurr/core/types';
+import type { RegressionScenario } from '@recurr-dev/core/types';
 import { api, ApiError } from '../api';
 import { useApi } from '../hooks';
 import { fmtTimeShort } from '../lib/format';

@@ -8,8 +8,8 @@ import {
   type CapturedHttpRequest,
   type ExecutionRecord,
   type Redactor,
-} from '@recurr/core';
-import type { IncidentStore } from '@recurr/store';
+} from '@recurr-dev/core';
+import type { IncidentStore } from '@recurr-dev/store';
 import type { RecurrConfig } from './config.js';
 import { als, offsetMs, pushEvent, type RuntimeCtx } from './context.js';
 

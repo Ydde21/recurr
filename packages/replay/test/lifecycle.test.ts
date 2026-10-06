@@ -3,8 +3,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
-import type { ExecutionRecord } from '@recurr/core';
-import { FileStore } from '@recurr/store';
+import type { ExecutionRecord } from '@recurr-dev/core';
+import { FileStore } from '@recurr-dev/store';
 import { replayIncident } from '../src/replay.js';
 
 /**

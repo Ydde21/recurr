@@ -63,9 +63,9 @@ diff engine as `recurr replay`.
 Once published to npm:
 
 ```bash
-npm install @recurr/sdk        # the capture/replay SDK (in your service)
-npm install -g @recurr/cli     # the CLI — installs the `recurr` binary
-npm install -g @recurr/server  # optional: collector + browser UI
+npm install @recurr-dev/sdk        # the capture/replay SDK (in your service)
+npm install -g @recurr-dev/cli     # the CLI — installs the `recurr` binary
+npm install -g @recurr-dev/server  # optional: collector + browser UI
 ```
 
 **Until the first npm release**, run from source — everything below works:
@@ -78,14 +78,14 @@ node packages/server/dist/bin.js          # or: npm link packages/server → `re
 
 To use the SDK from an external app before release, link the workspace:
 run `npm link` inside `packages/core`, `packages/store`, and `packages/sdk`,
-then `npm link @recurr/core @recurr/store @recurr/sdk` in your app.
+then `npm link @recurr-dev/core @recurr-dev/store @recurr-dev/sdk` in your app.
 
 ## Instrument your service
 
 Three lines of middleware plus optional DB instrumentation:
 
 ```ts
-import { init } from '@recurr/sdk';
+import { init } from '@recurr-dev/sdk';
 
 const recurr = await init({
   service: 'checkout-api',
@@ -277,7 +277,7 @@ materialized snapshot.
 | Symptom | Likely cause → fix |
 |---|---|
 | `recurr incidents` is empty | Capture is `on: 'error'` by default — only failing requests persist. Check `recurr doctor` for store/config. |
-| `replay failed: timed out waiting for recurr:ready` | The target didn't reach its `listen()` within `--ready-timeout` (default 20s; max 120s). Confirm the command starts the app (`-t "node dist/index.js"`, `--cwd` correct) and the app loads `@recurr/sdk` at startup. |
+| `replay failed: timed out waiting for recurr:ready` | The target didn't reach its `listen()` within `--ready-timeout` (default 20s; max 120s). Confirm the command starts the app (`-t "node dist/index.js"`, `--cwd` correct) and the app loads `@recurr-dev/sdk` at startup. |
 | `target exited (1)` / module load error at replay | The app imports a blocked module (`child_process`, `worker_threads`, `dgram`, `cluster`) or a native addon. Both are blocked by design — see Security model / Known limitations. |
 | Replay can't write the record | The child needs to reach the store: `fs:` specs are absolutized automatically; for `pg:`/`http:` make sure the store is reachable from the replay host. `RECURR_STORE` is propagated to the child. |
 | Egress blocked at replay | Expected — that's the isolation. Instrumented calls are served from the record; anything else must be mocked or moved behind `instrumentDb`/recorded HTTP. `RECURR_REPLAY_ALLOW_NET=1` opts out (loudly). |
@@ -293,12 +293,12 @@ pnpm install
 pnpm build       # turbo: all packages
 pnpm test        # unit + compat + soak + replay e2e (spawns the demo)
 pnpm demo        # scripted capture → replay → diff → fix walkthrough
-pnpm --filter @recurr/ui dev   # UI dev server on :5179, proxies /v1 → :4780
+pnpm --filter @recurr-dev/ui dev   # UI dev server on :5179, proxies /v1 → :4780
 ```
 
 Layout: `packages/{core,sdk,store,replay,server,ui,cli}` +
 `examples/checkout-demo`. PgStore tests are opt-in
-(`DATABASE_URL=postgres://… pnpm --filter @recurr/store test`). See
+(`DATABASE_URL=postgres://… pnpm --filter @recurr-dev/store test`). See
 [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md) for architecture
 invariants.
 

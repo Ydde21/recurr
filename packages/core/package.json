@@ -1,5 +1,5 @@
 {
-  "name": "@recurr/core",
+  "name": "@recurr-dev/core",
   "version": "0.1.0",
   "description": "Recurr incident record schema, redaction, and execution diff engine",
   "license": "MIT",

@@ -1,5 +1,5 @@
 {
-  "name": "@recurr/sdk",
+  "name": "@recurr-dev/sdk",
   "version": "0.1.0",
   "description": "Recurr capture & replay SDK for Node.js \u2014 records incident execution context and replays it safely",
   "license": "MIT",
@@ -35,8 +35,8 @@
     "dev": "tsc -p tsconfig.json --watch"
   },
   "dependencies": {
-    "@recurr/core": "workspace:*",
-    "@recurr/store": "workspace:*"
+    "@recurr-dev/core": "workspace:*",
+    "@recurr-dev/store": "workspace:*"
   },
   "devDependencies": {
     "@fastify/middie": "^9.3.4",

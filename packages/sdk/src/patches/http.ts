@@ -2,7 +2,7 @@ import http from 'node:http';
 import https from 'node:https';
 import { EventEmitter } from 'node:events';
 import { PassThrough, Readable, Transform } from 'node:stream';
-import type { HttpOutData, TimelineEvent } from '@recurr/core';
+import type { HttpOutData, TimelineEvent } from '@recurr-dev/core';
 import { als, pushEvent, replayNote, type RuntimeCtx } from '../context.js';
 
 /**

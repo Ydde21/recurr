@@ -12,7 +12,7 @@
     "build": "turbo run build",
     "test": "turbo run test",
     "dev": "turbo run dev",
-    "demo": "pnpm --filter @recurr/checkout-demo run demo"
+    "demo": "pnpm --filter @recurr-dev/checkout-demo run demo"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

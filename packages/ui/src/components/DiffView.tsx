@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
-import type { DiffReport, Divergence } from '@recurr/core/diff';
-import type { ExecutionRecord } from '@recurr/core/types';
+import type { DiffReport, Divergence } from '@recurr-dev/core/diff';
+import type { ExecutionRecord } from '@recurr-dev/core/types';
 import { diffLines, fmtMs, prettyBody, statusClass } from '../lib/format';
 import { Timeline } from './Timeline';
 import { JsonTree } from './JsonTree';

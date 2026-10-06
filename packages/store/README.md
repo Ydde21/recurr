@@ -1,4 +1,4 @@
-# @recurr/store
+# @recurr-dev/store
 
 Persistence backends for Recurr incident records: `FileStore`, `PgStore` (auto-migrating), `HttpStore`.
 

@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { openStore, type IncidentStore } from '@recurr/store';
+import { openStore, type IncidentStore } from '@recurr-dev/store';
 
 export interface CliConfig {
   store?: string;

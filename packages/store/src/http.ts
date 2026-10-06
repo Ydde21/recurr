@@ -1,4 +1,4 @@
-import type { ExecutionRecord, ExecutionSummary, RegressionScenario } from '@recurr/core';
+import type { ExecutionRecord, ExecutionSummary, RegressionScenario } from '@recurr-dev/core';
 import type { IncidentStore, ListFilter } from './store.js';
 
 /** HTTP store — talks to a recurr-server collector over its REST API. */

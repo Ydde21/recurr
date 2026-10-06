@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import type { DbQueryData } from '@recurr/core';
+import type { DbQueryData } from '@recurr-dev/core';
 import { als, pushEvent, replayNote, type RuntimeCtx } from '../context.js';
 
 /**

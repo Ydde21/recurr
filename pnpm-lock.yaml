@@ -23,7 +23,7 @@ importers:
 
   examples/checkout-demo:
     dependencies:
-      '@recurr/sdk':
+      '@recurr-dev/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
       express:
@@ -48,13 +48,13 @@ importers:
 
   packages/cli:
     dependencies:
-      '@recurr/core':
+      '@recurr-dev/core':
         specifier: workspace:*
         version: link:../core
-      '@recurr/replay':
+      '@recurr-dev/replay':
         specifier: workspace:*
         version: link:../replay
-      '@recurr/store':
+      '@recurr-dev/store':
         specifier: workspace:*
         version: link:../store
       commander:
@@ -82,14 +82,14 @@ importers:
 
   packages/replay:
     dependencies:
-      '@recurr/core':
+      '@recurr-dev/core':
         specifier: workspace:*
         version: link:../core
-      '@recurr/store':
+      '@recurr-dev/store':
         specifier: workspace:*
         version: link:../store
     devDependencies:
-      '@recurr/sdk':
+      '@recurr-dev/sdk':
         specifier: workspace:*
         version: link:../sdk
       typescript:
@@ -101,10 +101,10 @@ importers:
 
   packages/sdk:
     dependencies:
-      '@recurr/core':
+      '@recurr-dev/core':
         specifier: workspace:*
         version: link:../core
-      '@recurr/store':
+      '@recurr-dev/store':
         specifier: workspace:*
         version: link:../store
     devDependencies:
@@ -138,13 +138,13 @@ importers:
 
   packages/server:
     dependencies:
-      '@recurr/core':
+      '@recurr-dev/core':
         specifier: workspace:*
         version: link:../core
-      '@recurr/replay':
+      '@recurr-dev/replay':
         specifier: workspace:*
         version: link:../replay
-      '@recurr/store':
+      '@recurr-dev/store':
         specifier: workspace:*
         version: link:../store
       express:
@@ -163,7 +163,7 @@ importers:
 
   packages/store:
     dependencies:
-      '@recurr/core':
+      '@recurr-dev/core':
         specifier: workspace:*
         version: link:../core
       pg:
@@ -182,7 +182,7 @@ importers:
 
   packages/ui:
     dependencies:
-      '@recurr/core':
+      '@recurr-dev/core':
         specifier: workspace:*
         version: link:../core
       react:

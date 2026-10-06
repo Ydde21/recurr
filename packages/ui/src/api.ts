@@ -1,5 +1,5 @@
-import type { ExecutionRecord, ExecutionSummary, RegressionScenario } from '@recurr/core/types';
-import type { DiffReport } from '@recurr/core/diff';
+import type { ExecutionRecord, ExecutionSummary, RegressionScenario } from '@recurr-dev/core/types';
+import type { DiffReport } from '@recurr-dev/core/diff';
 
 export class ApiError extends Error {
   constructor(

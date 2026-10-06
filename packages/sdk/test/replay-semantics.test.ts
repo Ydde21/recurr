@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { Redactor, type ExecutionRecord, type TimelineEvent } from '@recurr/core';
+import { Redactor, type ExecutionRecord, type TimelineEvent } from '@recurr-dev/core';
 import { als, type RuntimeCtx } from '../src/context.js';
 import { installDeterminism } from '../src/patches/determinism.js';
 import { installHttpPatches } from '../src/patches/http.js';

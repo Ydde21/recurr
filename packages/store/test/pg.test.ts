@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import pg from 'pg';
-import type { ExecutionRecord } from '@recurr/core';
+import type { ExecutionRecord } from '@recurr-dev/core';
 import { PgStore } from '../src/pg.js';
 
 /**

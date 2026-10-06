@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { ExecutionRecord } from '@recurr/core/types';
+import type { ExecutionRecord } from '@recurr-dev/core/types';
 import { fmtMs, statusClass } from '../lib/format';
 import { eventLabel } from './Timeline';
 import { KIND_FILL } from '../lib/kinds';

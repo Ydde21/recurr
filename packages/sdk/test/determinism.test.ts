@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createRedactor, type ExecutionRecord } from '@recurr/core';
+import { createRedactor, type ExecutionRecord } from '@recurr-dev/core';
 import { als } from '../src/context.js';
 import { installDeterminism, setReplayOffset } from '../src/patches/determinism.js';
 import { makeCtx, type RecurrState } from '../src/state.js';

@@ -1,4 +1,4 @@
-import type { DiffReport, ExecutionRecord, ExecutionSummary, TimelineEvent } from '@recurr/core';
+import type { DiffReport, ExecutionRecord, ExecutionSummary, TimelineEvent } from '@recurr-dev/core';
 
 const useColor = process.stdout.isTTY && !process.env.NO_COLOR;
 

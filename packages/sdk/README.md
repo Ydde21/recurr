@@ -1,4 +1,4 @@
-# @recurr/sdk
+# @recurr-dev/sdk
 
 Capture & replay SDK — instrument a Node.js service (`middleware`, `errorMiddleware`, `instrumentDb`, `auth`) and Recurr records incident execution context for deterministic local replay.
 

@@ -1,5 +1,5 @@
 {
-  "name": "@recurr/cli",
+  "name": "@recurr-dev/cli",
   "version": "0.1.0",
   "description": "Recurr CLI \u2014 inspect, replay, diff and regression-test production incidents",
   "license": "MIT",
@@ -28,9 +28,9 @@
     "dev": "tsc -p tsconfig.json --watch"
   },
   "dependencies": {
-    "@recurr/core": "workspace:*",
-    "@recurr/replay": "workspace:*",
-    "@recurr/store": "workspace:*",
+    "@recurr-dev/core": "workspace:*",
+    "@recurr-dev/replay": "workspace:*",
+    "@recurr-dev/store": "workspace:*",
     "commander": "^12.1.0"
   },
   "devDependencies": {

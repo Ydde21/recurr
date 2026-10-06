@@ -2,7 +2,7 @@
  * Recurr replay preload — injected into replay children via NODE_OPTIONS
  * (`--import …`) BEFORE any application module loads.
  *
- * The call-site egress guard in @recurr/sdk's patches/isolation.ts patches
+ * The call-site egress guard in @recurr-dev/sdk's patches/isolation.ts patches
  * module exports — but ESM named/namespace imports (`import { spawn } from
  * 'node:child_process'`, `import * as cp`) snapshot their bindings and would
  * bypass those patches entirely. This preload closes that gap at the module

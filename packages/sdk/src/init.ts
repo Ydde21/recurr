@@ -1,5 +1,5 @@
-import { createRedactor } from '@recurr/core';
-import { openStore, type IncidentStore } from '@recurr/store';
+import { createRedactor } from '@recurr-dev/core';
+import { openStore, type IncidentStore } from '@recurr-dev/store';
 import { als, pushEvent } from './context.js';
 import { envConfig, type RecurrConfig } from './config.js';
 import { createErrorMiddleware, createMiddleware } from './middleware.js';

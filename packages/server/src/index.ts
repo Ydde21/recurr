@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { openStore, PgStore, type IncidentStore } from '@recurr/store';
+import { openStore, PgStore, type IncidentStore } from '@recurr-dev/store';
 import { createApp, redactStoreSpec } from './app.js';
 
 export { createApp, redactStoreSpec };

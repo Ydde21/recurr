@@ -1,9 +1,9 @@
 import express, { type Express } from 'express';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
-import { isSafeRecordId, validateRecord, SCHEMA_VERSION, type RegressionScenario } from '@recurr/core';
-import { replayIncident, ReplayError } from '@recurr/replay';
-import type { IncidentStore } from '@recurr/store';
+import { isSafeRecordId, validateRecord, SCHEMA_VERSION, type RegressionScenario } from '@recurr-dev/core';
+import { replayIncident, ReplayError } from '@recurr-dev/replay';
+import type { IncidentStore } from '@recurr-dev/store';
 
 /** Strip userinfo from store specs before logging/exposing them — pg
  *  connection strings embed passwords. */

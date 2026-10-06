@@ -1,7 +1,7 @@
 import http from 'node:http';
 import zlib from 'node:zlib';
 import { describe, expect, it, afterAll } from 'vitest';
-import { createRedactor, type ExecutionRecord, type HttpOutData } from '@recurr/core';
+import { createRedactor, type ExecutionRecord, type HttpOutData } from '@recurr-dev/core';
 import { als, type RuntimeCtx } from '../src/context.js';
 import { installHttpPatches } from '../src/patches/http.js';
 import { makeCtx, type RecurrState } from '../src/state.js';

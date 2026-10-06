@@ -5,7 +5,7 @@
 // working normally during capture.
 import { execSync } from 'node:child_process';
 import http from 'node:http';
-import { init } from '@recurr/sdk';
+import { init } from '@recurr-dev/sdk';
 
 // Touch the binding so the import can't be tree-shaken away.
 const marker = typeof execSync === 'function' ? 'loaded' : 'missing';

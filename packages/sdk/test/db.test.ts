@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { describe, expect, it } from 'vitest';
-import { createRedactor, type DbQueryData, type ExecutionRecord } from '@recurr/core';
+import { createRedactor, type DbQueryData, type ExecutionRecord } from '@recurr-dev/core';
 import { als } from '../src/context.js';
 import { instrumentDb } from '../src/patches/db.js';
 import { makeCtx, type RecurrState } from '../src/state.js';

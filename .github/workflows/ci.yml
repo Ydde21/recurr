@@ -56,7 +56,7 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # "pkg..." = the package plus its workspace dependencies (@recurr/core),
+      # "pkg..." = the package plus its workspace dependencies (@recurr-dev/core),
       # built in topological order — filtered build alone misses core's dist/.
-      - run: pnpm --filter @recurr/store... build
-      - run: pnpm --filter @recurr/store test
+      - run: pnpm --filter @recurr-dev/store... build
+      - run: pnpm --filter @recurr-dev/store test

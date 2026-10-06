@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
-import { FileStore } from '@recurr/store';
+import { FileStore } from '@recurr-dev/store';
 import { replayIncident } from '../src/replay.js';
 
 /**

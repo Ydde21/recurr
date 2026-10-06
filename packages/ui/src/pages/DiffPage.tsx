@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { diffExecutions } from '@recurr/core/diff';
+import { diffExecutions } from '@recurr-dev/core/diff';
 import { api } from '../api';
 import { useApi } from '../hooks';
 import { ErrorState, Loading, Empty } from '../components/states';

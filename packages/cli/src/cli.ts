@@ -2,8 +2,8 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { Command } from 'commander';
-import { diffExecutions, validateRecord, type RegressionScenario } from '@recurr/core';
-import { replayIncident, ReplayError } from '@recurr/replay';
+import { diffExecutions, validateRecord, type RegressionScenario } from '@recurr-dev/core';
+import { replayIncident, ReplayError } from '@recurr-dev/replay';
 import { CONFIG_DIR, CONFIG_FILE, loadConfig, resolveStore } from './config.js';
 import { bold, cyan, dim, fmtTime, gray, green, INCIDENT_HEADERS, incidentRow, printDiffReport, printRecord, red, table, yellow } from './format.js';
 
@@ -21,7 +21,7 @@ program
     `
 typical flow:
   recurr init                       create .recurr/ config + local store
-  (instrument your app with @recurr/sdk — it captures failing requests)
+  (instrument your app with @recurr-dev/sdk — it captures failing requests)
   recurr incidents                  list captured incidents
   recurr inspect <RUN-…>            timeline, error, seed, redaction report
   recurr replay <RUN-…> -t <cmd>    isolated replay + divergence report
@@ -76,7 +76,7 @@ program
         dependencies?: Record<string, string>;
         devDependencies?: Record<string, string>;
       };
-      sdkInstalled = !!(pkg.dependencies?.['@recurr/sdk'] ?? pkg.devDependencies?.['@recurr/sdk']);
+      sdkInstalled = !!(pkg.dependencies?.['@recurr-dev/sdk'] ?? pkg.devDependencies?.['@recurr-dev/sdk']);
     } catch {
       /* no package.json — still show the full instructions */
     }
@@ -84,10 +84,10 @@ program
     out(bold('next steps'));
     let step = 1;
     if (!sdkInstalled) {
-      out(`  ${step++}. install the SDK      ${cyan('npm install @recurr/sdk')}  (or pnpm add / yarn add)`);
+      out(`  ${step++}. install the SDK      ${cyan('npm install @recurr-dev/sdk')}  (or pnpm add / yarn add)`);
     }
     out(`  ${step++}. instrument your app  ${dim('— see README "Instrumenting your service". The short version:')}`);
-    out(dim(`       import { init } from '@recurr/sdk';`));
+    out(dim(`       import { init } from '@recurr-dev/sdk';`));
     out(dim(`       const recurr = await init({ service: '${serviceName}', capture: { on: 'error' } });`));
     out(dim('       app.use(recurr.middleware());  app.use(recurr.errorMiddleware());'));
     out(dim('       recurr.instrumentDb(pool);   // pg.Pool / pg.Client / pg-mem'));
@@ -114,7 +114,7 @@ program
       }
       if (!list.length) {
         out(dim('no incidents captured yet'));
-        out(dim('  incidents appear here once an instrumented service (@recurr/sdk) hits a failing request'));
+        out(dim('  incidents appear here once an instrumented service (@recurr-dev/sdk) hits a failing request'));
         out(dim(`  — or try the demo: ${bold('pnpm demo')} from the recurr repo`));
         return;
       }

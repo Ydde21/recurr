@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
-import { summarize, type ExecutionRecord, type ExecutionSummary, type RegressionScenario } from '@recurr/core';
+import { summarize, type ExecutionRecord, type ExecutionSummary, type RegressionScenario } from '@recurr-dev/core';
 import type { IncidentStore, ListFilter } from './store.js';
 
 const MIGRATIONS_DIR = fileURLToPath(new URL('../migrations', import.meta.url));

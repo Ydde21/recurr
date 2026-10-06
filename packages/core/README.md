@@ -1,4 +1,4 @@
-# @recurr/core
+# @recurr-dev/core
 
 Incident Record schema, validation, redaction engine, and execution diff for Recurr.
 

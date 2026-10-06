@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { isSafeRecordId, summarize, type ExecutionRecord, type ExecutionSummary, type RegressionScenario } from '@recurr/core';
+import { isSafeRecordId, summarize, type ExecutionRecord, type ExecutionSummary, type RegressionScenario } from '@recurr-dev/core';
 import type { IncidentStore, ListFilter } from './store.js';
 
 /** Record ids become file names — never let one traverse the store dir. */

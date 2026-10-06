@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import type { ExecutionRecord, TimelineEvent } from '@recurr/core/types';
+import type { ExecutionRecord, TimelineEvent } from '@recurr-dev/core/types';
 import { api } from '../api';
 import { useApi, useHotkey } from '../hooks';
 import { fmtMs, fmtTime } from '../lib/format';

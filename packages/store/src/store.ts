@@ -1,4 +1,4 @@
-import type { ExecutionRecord, ExecutionSummary, RegressionScenario } from '@recurr/core';
+import type { ExecutionRecord, ExecutionSummary, RegressionScenario } from '@recurr-dev/core';
 
 export interface ListFilter {
   /** Only 'incident' | 'replay' records, or all when unset. */

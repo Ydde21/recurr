@@ -1,4 +1,4 @@
-import type { DbQueryData, HttpOutData, TimelineEvent } from '@recurr/core/types';
+import type { DbQueryData, HttpOutData, TimelineEvent } from '@recurr-dev/core/types';
 import { fmtMs, fmtTime, statusClass } from '../lib/format';
 import { HeadersTable, BodyViewer } from './BodyViewer';
 import { JsonTree } from './JsonTree';

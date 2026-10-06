@@ -4,8 +4,8 @@ import path from 'node:path';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import express, { type Express } from 'express';
 import { afterAll, describe, expect, it } from 'vitest';
-import type { ExecutionRecord } from '@recurr/core';
-import { FileStore } from '@recurr/store';
+import type { ExecutionRecord } from '@recurr-dev/core';
+import { FileStore } from '@recurr-dev/store';
 import { init } from '../src/index.js';
 
 /**

@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { diffExecutions, validateRecord, type DiffReport, type ExecutionRecord } from '@recurr/core';
-import type { IncidentStore } from '@recurr/store';
+import { diffExecutions, validateRecord, type DiffReport, type ExecutionRecord } from '@recurr-dev/core';
+import type { IncidentStore } from '@recurr-dev/store';
 
 export interface ReplayTarget {
   /** Command to launch the app, e.g. "node dist/index.js" or an argv array. */

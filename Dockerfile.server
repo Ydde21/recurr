@@ -9,8 +9,8 @@ COPY packages/replay ./packages/replay
 COPY packages/sdk ./packages/sdk
 COPY packages/server ./packages/server
 COPY packages/ui ./packages/ui
-RUN pnpm install --filter @recurr/server... --filter @recurr/ui --frozen-lockfile || pnpm install --filter @recurr/server... --filter @recurr/ui
-RUN pnpm --filter @recurr/server... --filter @recurr/ui build
+RUN pnpm install --filter @recurr-dev/server... --filter @recurr-dev/ui --frozen-lockfile || pnpm install --filter @recurr-dev/server... --filter @recurr-dev/ui
+RUN pnpm --filter @recurr-dev/server... --filter @recurr-dev/ui build
 
 FROM node:22-alpine
 RUN corepack enable && corepack prepare pnpm@9.15.9 --activate

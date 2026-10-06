@@ -6,7 +6,7 @@ import net from 'node:net';
 import tls from 'node:tls';
 import dns from 'node:dns';
 import { createRequire } from 'node:module';
-import { init } from '@recurr/sdk';
+import { init } from '@recurr-dev/sdk';
 
 const require = createRequire(import.meta.url);
 const recurr = await init({ service: 'egress-app', capture: { on: 'always' } });

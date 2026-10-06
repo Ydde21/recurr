@@ -1,5 +1,5 @@
 {
-  "name": "@recurr/ui",
+  "name": "@recurr-dev/ui",
   "version": "0.1.0",
   "private": true,
   "description": "Recurr developer UI — incident inspection, replay, and diff workspace",
@@ -11,7 +11,7 @@
     "dev": "vite"
   },
   "dependencies": {
-    "@recurr/core": "workspace:*",
+    "@recurr-dev/core": "workspace:*",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.30.0"

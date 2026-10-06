@@ -15,7 +15,7 @@ pnpm demo         # scripted end-to-end walkthrough (the fastest sanity check)
 
 `pnpm test` depends on `build` — the replay e2e spawns the compiled demo app.
 PgStore integration tests are opt-in:
-`DATABASE_URL=postgres://… pnpm --filter @recurr/store test`.
+`DATABASE_URL=postgres://… pnpm --filter @recurr-dev/store test`.
 
 ## Repository layout
 
@@ -27,17 +27,17 @@ PgStore integration tests are opt-in:
 | `packages/replay` | Replay orchestrator — spawn, isolate, inject, collect, diff |
 | `packages/server` | Collector + query API (`recurr-server`) + UI host |
 | `packages/ui` | React+Vite developer UI (incident → replay → diff → regression) |
-| `packages/cli` | `@recurr/cli` — the `recurr` binary |
+| `packages/cli` | `@recurr-dev/cli` — the `recurr` binary |
 | `examples/checkout-demo` | End-to-end demo app with an intentional bug |
 
 ## Development workflow
 
-- UI dev server: `pnpm --filter @recurr/ui dev` (Vite on :5179, proxies
+- UI dev server: `pnpm --filter @recurr-dev/ui dev` (Vite on :5179, proxies
   `/v1` + `/healthz` to `RECURR_API` or `127.0.0.1:4780`).
 - Server: `RECURR_STORE=fs:examples/checkout-demo/.recurr/store recurr-server`
   (or `node packages/server/dist/bin.js`) — serves the API and, once built,
   `packages/ui/dist` at `/`.
-- Per-package work: `pnpm --filter @recurr/<pkg> build|test`.
+- Per-package work: `pnpm --filter @recurr-dev/<pkg> build|test`.
 - Ports to keep free for tests/demo: 4780 (server), 4781/4790 (demo),
   14781/14790 (e2e).
 
@@ -99,7 +99,7 @@ pnpm -r publish --no-git-checks
 # 5. docker image: docker compose build && docker compose up -d
 ```
 
-The CLI publishes as `@recurr/cli` (the unscoped `recurr` name was already
+The CLI publishes as `@recurr-dev/cli` (the unscoped `recurr` name was already
 taken on npm by an unrelated package); the installed binary is still `recurr`.
-`@recurr/ui` is `private` and ships inside `@recurr/server`/`Dockerfile.server`,
+`@recurr-dev/ui` is `private` and ships inside `@recurr-dev/server`/`Dockerfile.server`,
 not to npm.
