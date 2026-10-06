@@ -6,3 +6,8 @@ dist/
 .env.local
 .DS_Store
 coverage/
+*.log
+*.tgz
+# incident records / local recurr state (the committed example keeps its own
+# stricter .recurr/.gitignore)
+.recurr/store/

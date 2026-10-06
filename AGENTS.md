@@ -43,6 +43,10 @@ NodeNext). Name is "Recurr" — packages `@recurr/*`, CLI binary `recurr`.
 
 ## Testing
 
+- CI: `.github/workflows/ci.yml` — node from `.nvmrc`, `pnpm install
+  --frozen-lockfile` → `pnpm build` → `pnpm test`; pg job runs
+  `@recurr/store` tests against a services-container postgres (opt-in
+  locally, isolated in CI).
 - Unit: `packages/*/test/*.test.ts` (vitest).
 - Compat: `packages/sdk/test/compat.test.ts` — express/fastify+middie/koa
   adapter/raw node:http (Hono/fetch-style: unsupported, documented in README).

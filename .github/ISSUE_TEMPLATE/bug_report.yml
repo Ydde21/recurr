@@ -1,0 +1,30 @@
+name: Bug report
+description: Something in Recurr didn't behave the way the docs say it should
+labels: [bug]
+body:
+  - type: input
+    id: component
+    attributes:
+      label: Component
+      description: sdk | replay | server | store | cli | ui | demo | docs
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs actual
+      description: What did you run, what did you expect, what happened? Include CLI output or UI state.
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: node version, framework (express/fastify/koa/raw), store backend (fs/pg/http), OS
+    validations:
+      required: true
+  - type: textarea
+    id: record
+    attributes:
+      label: Record details (optional)
+      description: recurr inspect output, diff report, or record shape — scrub credentials/payloads first

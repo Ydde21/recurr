@@ -70,7 +70,35 @@ touching `sdk`/`replay`/`store`. The short version:
 
 ## Releasing (maintainers)
 
-All publishable packages carry `publishConfig.access: public`. With
-`pnpm publish -r`, `workspace:*` deps are rewritten to real versions — verify
-`pnpm pack` contents (`files` whitelist: `dist`, plus `migrations` for store)
-before pushing to npm.
+All publishable packages carry `publishConfig.access: public` and are
+versioned in lockstep — currently `0.1.0`, which is honest for the first
+public release (pre-1.0 signals the API may evolve). `pnpm pack`/`publish`
+rewrites `workspace:*` deps to the real version — verified via tarball
+inspection.
+
+Prerequisites (not in the repo): push access to the git remote, an npm
+account with publish rights to the `@recurr` scope (or create the org), and
+`npm login`.
+
+```bash
+# 1. clean checkout, everything green
+git checkout main && git pull
+pnpm install --frozen-lockfile && pnpm build && pnpm test
+
+# 2. sanity-check the tarballs (what will actually ship)
+for p in core sdk store replay server cli; do
+  (cd packages/$p && pnpm pack --pack-destination /tmp/recurr-pack)
+done
+
+# 3. bump versions together, commit, tag
+#    (edit every package.json "version" — no release bot yet)
+
+# 4. publish — pnpm rewrites workspace:* → pinned versions
+pnpm -r publish --no-git-checks
+
+# 5. docker image: docker compose build && docker compose up -d
+```
+
+The CLI package (`recurr`, unscoped) doesn't need `publishConfig` — npm
+treats unscoped names as public by default. `@recurr/ui` is `private` and
+ships inside `@recurr/server`/`Dockerfile.server`, not to npm.

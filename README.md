@@ -231,6 +231,8 @@ Escape hatches for constrained environments (explicit and loud):
 `RECURR_REPLAY_ALLOW_NET=1` disables the egress guard;
 `RECURR_REPLAY_INHERIT_ENV=1` disables env sanitization.
 
+Reporting a vulnerability: see [SECURITY.md](SECURITY.md).
+
 ## Compatibility
 
 `recurr.middleware()` is connect-style `(req, res, next)`. Verified by
