@@ -196,6 +196,12 @@ Or with Docker (Postgres + server + UI in one shot):
 docker compose up     # → http://127.0.0.1:4780, pg-backed, data in the pgdata volume
 ```
 
+A prebuilt image is published to GHCR on each release tag:
+
+```bash
+docker run -p 4780:4780 -v recurr-data:/data -e RECURR_STORE=fs:/data ghcr.io/ydde21/recurr-server:latest
+```
+
 Point a CLI at a remote collector with `--store http://host:4780` or
 `RECURR_STORE=http://…`. Instrumented services can write to it the same way
 (`init({ store: 'http://…' })`).
