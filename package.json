@@ -15,7 +15,7 @@
     "demo": "pnpm --filter @recurr-dev/checkout-demo run demo"
   },
   "devDependencies": {
-    "@types/node": "^22.10.2",
+    "@types/node": "^26.6.4",
     "turbo": "^2.3.3",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
