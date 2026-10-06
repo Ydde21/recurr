@@ -218,3 +218,45 @@ describe('HttpStore', () => {
     await expect(hs.list()).rejects.toThrow();
   });
 });
+
+describe('bearer auth', () => {
+  let authTmp: string;
+  let authBase: string;
+  let authServer: import('node:http').Server;
+
+  beforeAll(async () => {
+    authTmp = await mkdtemp(path.join(tmpdir(), 'recurr-server-auth-'));
+    const app = createApp(new FileStore(authTmp), { authToken: 'test-token' });
+    await new Promise<void>((resolve) => {
+      authServer = app.listen(0, '127.0.0.1', resolve);
+    });
+    const addr = authServer.address();
+    authBase = `http://127.0.0.1:${typeof addr === 'object' && addr ? addr.port : 0}`;
+  });
+
+  afterAll(async () => {
+    authServer?.closeAllConnections?.();
+    authServer?.close();
+    await rm(authTmp, { recursive: true, force: true });
+  });
+
+  it('rejects /v1 without a token but leaves /healthz open', async () => {
+    expect((await fetch(`${authBase}/v1/executions`)).status).toBe(401);
+    expect((await fetch(`${authBase}/healthz`)).status).toBe(200);
+  });
+
+  it('rejects a wrong token and accepts the right one', async () => {
+    const bad = await fetch(`${authBase}/v1/executions`, { headers: { authorization: 'Bearer nope' } });
+    expect(bad.status).toBe(401);
+    const ok = await fetch(`${authBase}/v1/executions`, { headers: { authorization: 'Bearer test-token' } });
+    expect(ok.status).toBe(200);
+  });
+
+  it('HttpStore round-trips through auth when given the token', async () => {
+    const denied = new HttpStore(authBase);
+    await expect(denied.list()).rejects.toThrow('401');
+    const hs = new HttpStore(authBase, { token: 'test-token' });
+    await hs.save(rec('RUN-AUTH01'));
+    expect((await hs.get('RUN-AUTH01'))?.id).toBe('RUN-AUTH01');
+  });
+});

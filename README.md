@@ -210,13 +210,17 @@ Point a CLI at a remote collector with `--store http://host:4780` or
 
 ## Security model — read this before exposing the server
 
-**`recurr-server` has no authentication, and the replay endpoints
-intentionally execute a caller-supplied command on the host.** That is the
-product: a replay must run your code. Exposing the port to an untrusted
-network is remote code execution for anyone who can reach it.
+**The replay endpoints intentionally execute a caller-supplied command on the
+host.** That is the product: a replay must run your code. Exposing the port to
+an untrusted network is remote code execution for anyone who can reach it.
 
-- Default safe posture: **localhost only**, or bound behind an authenticating
-  reverse proxy / VPN. The UI and CLI assume this.
+- **Auth**: set `RECURR_TOKEN=<secret>` on the server to require
+  `Authorization: Bearer <secret>` on every `/v1/*` route (`/healthz` stays
+  open for probes). Clients — CLI, `HttpStore`, SDK — read the same
+  `RECURR_TOKEN` env and send it automatically. Without the env the server is
+  fully open: **localhost only**, or bound behind an authenticating reverse
+  proxy / VPN. The built-in UI shell is unauthenticated but holds no data —
+  it can't supply the token, so with auth on, use the CLI/API remotely.
 - Replay children are network-isolated (loopback-only listeners, egress
   guard, module blocklist) and env-sanitized (`*_KEY`, `*TOKEN*`, `*PASS*`,
   `DATABASE_URL`, proxy vars, cloud/kube/docker credentials are stripped;

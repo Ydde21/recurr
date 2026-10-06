@@ -13,6 +13,8 @@ export interface ServerOptions {
   storeSpec?: string;
   /** Directory containing the built developer UI (packages/ui/dist). */
   uiDir?: string;
+  /** Bearer token required on /v1/* when set. Default env RECURR_TOKEN. */
+  authToken?: string;
 }
 
 /** Replay children resolve the store spec in their own cwd — fs: paths must
@@ -35,13 +37,14 @@ export async function start(opts: ServerOptions = {}): Promise<{ port: number; c
     process.env.RECURR_UI_DIR ??
     // repo layout: packages/server/dist → packages/ui/dist
     path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../ui/dist');
-  const app = createApp(store, { storeSpec: spec, uiDir });
+  const authToken = opts.authToken ?? process.env.RECURR_TOKEN;
+  const app = createApp(store, { storeSpec: spec, uiDir, authToken });
   const port = opts.port ?? Number(process.env.PORT ?? 4780);
   return new Promise((resolve) => {
     const server = app.listen(port, () => {
       const addr = server.address();
       const actual = typeof addr === 'object' && addr ? addr.port : port;
-      console.log(`[recurr-server] listening on :${actual} (store: ${redactStoreSpec(spec)})`);
+      console.log(`[recurr-server] listening on :${actual} (store: ${redactStoreSpec(spec)}, auth: ${authToken ? 'bearer' : 'off — set RECURR_TOKEN to require it'})`);
       resolve({
         port: actual,
         close: () =>

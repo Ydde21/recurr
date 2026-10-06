@@ -1,6 +1,7 @@
 import express, { type Express } from 'express';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
+import { timingSafeEqual } from 'node:crypto';
 import { isSafeRecordId, validateRecord, SCHEMA_VERSION, type RegressionScenario } from '@recurr-dev/core';
 import { replayIncident, ReplayError } from '@recurr-dev/replay';
 import type { IncidentStore } from '@recurr-dev/store';
@@ -20,6 +21,12 @@ export interface AppOptions {
   storeSpec?: string;
   /** Directory containing the built developer UI. Served at / when present. */
   uiDir?: string;
+  /**
+   * When set, every /v1/* route requires `Authorization: Bearer <token>`.
+   * /healthz stays open for liveness probes; the static UI shell is
+   * unauthenticated but holds no data — all data flows through /v1.
+   */
+  authToken?: string;
 }
 
 interface ReplayRequestBody {
@@ -94,10 +101,23 @@ function replayErrorStatus(err: ReplayError): number {
   }
 }
 
+/** Constant-time bearer check — auth'd deployments shouldn't leak the token
+ *  length/content through compare timing. */
+function bearerAuth(token: string): express.RequestHandler {
+  const expected = Buffer.from(`Bearer ${token}`);
+  return (req, res, next) => {
+    const got = Buffer.from(req.headers.authorization ?? '');
+    if (got.length === expected.length && timingSafeEqual(got, expected)) return next();
+    res.status(401).json({ error: 'unauthorized — set Authorization: Bearer <RECURR_TOKEN>' });
+  };
+}
+
 /** Collector + query API + replay runner. Thin HTTP layer over an IncidentStore. */
 export function createApp(store: IncidentStore, opts: AppOptions = {}): Express {
   const app = express();
   app.use(express.json({ limit: '25mb' }));
+
+  if (opts.authToken) app.use('/v1', bearerAuth(opts.authToken));
 
   app.get('/healthz', (_req, res) => {
     // The pg spec embeds credentials — strip the authority's userinfo before

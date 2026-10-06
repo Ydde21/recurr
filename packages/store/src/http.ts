@@ -3,14 +3,20 @@ import type { IncidentStore, ListFilter } from './store.js';
 
 /** HTTP store — talks to a recurr-server collector over its REST API. */
 export class HttpStore implements IncidentStore {
-  constructor(private readonly baseUrl: string) {}
+  /** Bearer token sent to collectors started with RECURR_TOKEN. */
+  private readonly token?: string;
+
+  constructor(private readonly baseUrl: string, opts: { token?: string } = {}) {
+    this.token = opts.token ?? process.env.RECURR_TOKEN;
+  }
 
   private url(path: string): string {
     return `${this.baseUrl.replace(/\/$/, '')}${path}`;
   }
 
   private async req(path: string, init?: RequestInit): Promise<Response> {
-    const res = await fetch(this.url(path), { ...init, signal: AbortSignal.timeout(15_000) });
+    const headers = { ...init?.headers, ...(this.token ? { authorization: `Bearer ${this.token}` } : {}) };
+    const res = await fetch(this.url(path), { ...init, headers, signal: AbortSignal.timeout(15_000) });
     if (!res.ok) {
       const body = await res.text().catch(() => '');
       throw new Error(`recurr server ${res.status} ${path}: ${body.slice(0, 200)}`);
@@ -27,7 +33,10 @@ export class HttpStore implements IncidentStore {
   }
 
   async get(id: string): Promise<ExecutionRecord | null> {
-    const res = await fetch(this.url(`/v1/executions/${encodeURIComponent(id)}`), { signal: AbortSignal.timeout(15_000) });
+    const res = await fetch(this.url(`/v1/executions/${encodeURIComponent(id)}`), {
+      headers: this.token ? { authorization: `Bearer ${this.token}` } : undefined,
+      signal: AbortSignal.timeout(15_000),
+    });
     if (res.status === 404) return null;
     if (!res.ok) throw new Error(`recurr server ${res.status}`);
     return (await res.json()) as ExecutionRecord;
