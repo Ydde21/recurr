@@ -31,7 +31,7 @@
     "@recurr-dev/core": "workspace:*",
     "@recurr-dev/replay": "workspace:*",
     "@recurr-dev/store": "workspace:*",
-    "commander": "^12.1.0"
+    "commander": "^15.0.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.4",
