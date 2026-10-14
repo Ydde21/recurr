@@ -40,7 +40,7 @@
   },
   "devDependencies": {
     "@fastify/middie": "^9.3.4",
-    "@hono/node-server": "^1.14.4",
+    "@hono/node-server": "^2.1.4",
     "@types/express": "^4.17.21",
     "@types/node": "^26.6.4",
     "@types/pg": "^8.11.10",
