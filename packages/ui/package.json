@@ -14,14 +14,14 @@
     "@recurr-dev/core": "workspace:*",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^7.18.4"
+    "react-router-dom": "^7.18.5"
   },
   "devDependencies": {
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
-    "@vitejs/plugin-react": "^6.1.1",
+    "@vitejs/plugin-react": "^6.2.1",
     "typescript": "^5.7.2",
-    "vite": "^8.3.2",
-    "vitest": "^5.0.3"
+    "vite": "^8.3.6",
+    "vitest": "^5.1.0"
   }
 }
